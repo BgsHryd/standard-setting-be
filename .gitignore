@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+.svelte-kit/
+build/
+dist/
+coverage/
+tmp/
+*.log
+*.tar.gz
+*.zip
+/qa-artifacts/
+/output/
+/outputs/

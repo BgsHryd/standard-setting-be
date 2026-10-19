@@ -1,0 +1,547 @@
+{
+  "startedAt": "2026-10-13T03:41:18.728Z",
+  "baseURL": "http://127.0.0.1:18081/api/v1",
+  "cases": [
+    {
+      "stage": "QA-09 fresh password session",
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "stage": "QA-09 fresh password session",
+      "method": "GET",
+      "path": "/me",
+      "status": 200
+    },
+    {
+      "stage": "QA-17 item create/edit/view",
+      "method": "POST",
+      "path": "/items",
+      "status": 200
+    },
+    {
+      "stage": "QA-17 item create/edit/view",
+      "method": "GET",
+      "path": "/items/QA-1791862878943-PG",
+      "status": 200
+    },
+    {
+      "stage": "QA-10..15 draft wizard, resume, server metadata",
+      "method": "POST",
+      "path": "/projects",
+      "status": 200
+    },
+    {
+      "stage": "QA-10..15 draft wizard, resume, server metadata",
+      "method": "POST",
+      "path": "/projects/project_8a8cdedbbdc5728d/activate",
+      "status": 422
+    },
+    {
+      "stage": "QA-10..15 draft wizard, resume, server metadata",
+      "method": "PUT",
+      "path": "/projects/project_8a8cdedbbdc5728d",
+      "status": 200
+    },
+    {
+      "stage": "QA-10..15 draft wizard, resume, server metadata",
+      "method": "GET",
+      "path": "/projects/project_8a8cdedbbdc5728d",
+      "status": 200
+    },
+    {
+      "stage": "QA-10..15 draft wizard, resume, server metadata",
+      "method": "POST",
+      "path": "/projects/project_8a8cdedbbdc5728d/accounts/generate",
+      "status": 200
+    },
+    {
+      "stage": "QA-10..15 draft wizard, resume, server metadata",
+      "method": "POST",
+      "path": "/projects/project_8a8cdedbbdc5728d/accounts/generate",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/users?projectId=project_8a8cdedbbdc5728d",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/users",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "POST",
+      "path": "/projects/project_8a8cdedbbdc5728d/activate",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "PUT",
+      "path": "/projects/project_8a8cdedbbdc5728d",
+      "status": 409
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/items/QA-1791862878943-PG",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/me",
+      "status": 428
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "POST",
+      "path": "/auth/change-password",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/me",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/me",
+      "status": 428
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/me",
+      "status": 428
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "POST",
+      "path": "/auth/change-password",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/me",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "POST",
+      "path": "/auth/change-password",
+      "status": 200
+    },
+    {
+      "stage": "QA-16 users and project origin",
+      "method": "GET",
+      "path": "/me",
+      "status": 200
+    },
+    {
+      "stage": "KI-01/08 scope",
+      "method": "GET",
+      "path": "/projects",
+      "status": 403
+    },
+    {
+      "stage": "KI-01/08 scope",
+      "method": "GET",
+      "path": "/pic/monitoring",
+      "status": 403
+    },
+    {
+      "stage": "KI-01/08 scope",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 403
+    },
+    {
+      "stage": "KI-01/08 scope",
+      "method": "GET",
+      "path": "/pic/monitoring?subjectCode=BIN",
+      "status": 403
+    },
+    {
+      "stage": "KI-01/08 scope",
+      "method": "GET",
+      "path": "/pic/monitoring?projectId=other",
+      "status": 403
+    },
+    {
+      "stage": "KI-01/08 scope",
+      "method": "GET",
+      "path": "/pic/panelists/user-superadmin/submissions?round=1",
+      "status": 403
+    },
+    {
+      "stage": "QA-20/21 initial monitoring no fabricated statistics",
+      "method": "GET",
+      "path": "/pic/monitoring",
+      "status": 200
+    },
+    {
+      "stage": "QA-20/21 initial monitoring no fabricated statistics",
+      "method": "GET",
+      "path": "/projects/project_8a8cdedbbdc5728d/monitoring?subjectCode=MAT",
+      "status": 200
+    },
+    {
+      "stage": "KI-11/12 incomplete finalize/complete rejected",
+      "method": "POST",
+      "path": "/pic/rounds/finalize",
+      "status": 409
+    },
+    {
+      "stage": "KI-11/12 incomplete finalize/complete rejected",
+      "method": "POST",
+      "path": "/projects/project_8a8cdedbbdc5728d/complete",
+      "status": 409
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 422
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PGK",
+      "status": 422
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PGK",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-ESSAY",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PGK",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-ESSAY",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "GET",
+      "path": "/pic/monitoring",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "GET",
+      "path": "/projects/project_8a8cdedbbdc5728d/panelists/user_df1162043b7eac44/submissions?subjectCode=MAT&round=1",
+      "status": 200
+    },
+    {
+      "stage": "QA-25/26 real form and three answer types",
+      "method": "GET",
+      "path": "/pic/panelists/user_df1162043b7eac44/submissions?round=1",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "POST",
+      "path": "/pic/rounds/finalize",
+      "status": 409
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "POST",
+      "path": "/pic/rounds/finalize",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 422
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "POST",
+      "path": "/pic/rounds/rollback",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "POST",
+      "path": "/pic/rounds/finalize",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PGK",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-ESSAY",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PGK",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-ESSAY",
+      "status": 200
+    },
+    {
+      "stage": "QA-24/27/28 finalize, history and rollback",
+      "method": "POST",
+      "path": "/pic/rounds/finalize",
+      "status": 200
+    },
+    {
+      "stage": "QA-18/19 final-round snapshot only",
+      "method": "POST",
+      "path": "/projects/project_8a8cdedbbdc5728d/complete",
+      "status": 200
+    },
+    {
+      "stage": "QA-18/19 final-round snapshot only",
+      "method": "GET",
+      "path": "/items/QA-1791862878943-PG/result",
+      "status": 200
+    },
+    {
+      "stage": "QA-18/19 final-round snapshot only",
+      "method": "GET",
+      "path": "/panelist/form",
+      "status": 200
+    },
+    {
+      "stage": "QA-18/19 final-round snapshot only",
+      "method": "PUT",
+      "path": "/panelist/submissions/QA-1791862878943-PG",
+      "status": 422
+    },
+    {
+      "stage": "QA-18/19 final-round snapshot only",
+      "method": "POST",
+      "path": "/items",
+      "status": 409
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/items",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/projects",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/projects/project_6977ed6f0c5d53df/accounts/generate",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "GET",
+      "path": "/me",
+      "status": 428
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/auth/change-password",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "GET",
+      "path": "/me",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "GET",
+      "path": "/me",
+      "status": 428
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/auth/change-password",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "GET",
+      "path": "/me",
+      "status": 200
+    },
+    {
+      "stage": "browser fixture",
+      "method": "POST",
+      "path": "/projects/project_6977ed6f0c5d53df/activate",
+      "status": 200
+    }
+  ],
+  "fixture": {
+    "projectId": "project_8a8cdedbbdc5728d",
+    "projectCode": "SS-C5728D",
+    "itemIds": [
+      "QA-1791862878943-PG",
+      "QA-1791862878943-PGK",
+      "QA-1791862878943-ESSAY"
+    ],
+    "picUsername": "ss-c5728d.mat.pic01",
+    "panelistUsernames": [
+      "ss-c5728d.mat.panelis01",
+      "ss-c5728d.mat.panelis02"
+    ]
+  },
+  "browserFixture": {
+    "projectId": "project_6977ed6f0c5d53df",
+    "projectCode": "SS-5D53DF",
+    "itemIds": [
+      "QA-1791862878943-PG-UI",
+      "QA-1791862878943-PGK-UI",
+      "QA-1791862878943-ESSAY-UI"
+    ],
+    "accounts": [
+      {
+        "id": "user_17eea90f5ede238d",
+        "username": "ss-5d53df.mat.pic01",
+        "role": "pic_mapel"
+      },
+      {
+        "id": "user_9b3800ceb4edf970",
+        "username": "ss-5d53df.mat.panelis01",
+        "role": "panelis"
+      }
+    ]
+  },
+  "outcome": "PASS",
+  "finishedAt": "2026-10-13T03:41:20.325Z"
+}
