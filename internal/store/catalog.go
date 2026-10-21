@@ -24,7 +24,7 @@ func (m *Mongo) ListSubjects(ctx context.Context) ([]domain.Subject, error) {
 func (m *Mongo) CreateSubject(ctx context.Context, s domain.Subject) error {
 	_, err := m.database.Collection("subjects").InsertOne(ctx, s)
 	if mongo.IsDuplicateKeyError(err) {
-		return errors.New("mata pelajaran sudah ada; nama harus unik")
+		return errors.New("kode atau nama mata pelajaran sudah digunakan")
 	}
 	return err
 }

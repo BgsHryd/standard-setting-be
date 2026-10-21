@@ -77,18 +77,26 @@ type Project struct {
 	UpdatedAt             time.Time        `json:"updatedAt" bson:"updatedAt"`
 }
 
+type CandidateDefinitionRevision struct {
+	Version    int       `json:"version" bson:"version"`
+	Definition string    `json:"definition" bson:"definition"`
+	ActorID    string    `json:"actorId,omitempty" bson:"actorId,omitempty"`
+	CreatedAt  time.Time `json:"createdAt" bson:"createdAt"`
+}
+
 type ProjectSubject struct {
-	CandidateDefinition string          `json:"candidateDefinition" bson:"candidateDefinition"`
-	CandidateVersion    int             `json:"candidateVersion" bson:"candidateVersion"`
-	Slots               []PersonnelSlot `json:"slots" bson:"slots"`
-	Code                string          `json:"code" bson:"code"`
-	Name                string          `json:"name" bson:"name"`
-	ItemIDs             []string        `json:"itemIds" bson:"itemIds"`
-	PICUserID           string          `json:"picUserId,omitempty" bson:"picUserId,omitempty"`
-	PICName             string          `json:"picName,omitempty" bson:"picName,omitempty"`
-	PanelistCount       int             `json:"panelistCount" bson:"panelistCount"`
-	PanelistUserIDs     []string        `json:"panelistUserIds,omitempty" bson:"panelistUserIds,omitempty"`
-	PanelistNames       []string        `json:"panelistNames,omitempty" bson:"panelistNames,omitempty"`
+	CandidateHistory    []CandidateDefinitionRevision `json:"candidateHistory,omitempty" bson:"candidateHistory,omitempty"`
+	CandidateDefinition string                        `json:"candidateDefinition" bson:"candidateDefinition"`
+	CandidateVersion    int                           `json:"candidateVersion" bson:"candidateVersion"`
+	Slots               []PersonnelSlot               `json:"slots" bson:"slots"`
+	Code                string                        `json:"code" bson:"code"`
+	Name                string                        `json:"name" bson:"name"`
+	ItemIDs             []string                      `json:"itemIds" bson:"itemIds"`
+	PICUserID           string                        `json:"picUserId,omitempty" bson:"picUserId,omitempty"`
+	PICName             string                        `json:"picName,omitempty" bson:"picName,omitempty"`
+	PanelistCount       int                           `json:"panelistCount" bson:"panelistCount"`
+	PanelistUserIDs     []string                      `json:"panelistUserIds,omitempty" bson:"panelistUserIds,omitempty"`
+	PanelistNames       []string                      `json:"panelistNames,omitempty" bson:"panelistNames,omitempty"`
 }
 
 type Item struct {
@@ -175,7 +183,17 @@ type RoundExclusion struct {
 	CreatedAt  time.Time `json:"createdAt" bson:"createdAt"`
 }
 
+type SnapshotPanelist struct {
+	PanelistID      string `json:"panelistId" bson:"panelistId"`
+	PanelistName    string `json:"panelistName" bson:"panelistName"`
+	Included        bool   `json:"included" bson:"included"`
+	Active          bool   `json:"active" bson:"active"`
+	Removed         bool   `json:"removed" bson:"removed"`
+	ExclusionReason string `json:"exclusionReason,omitempty" bson:"exclusionReason,omitempty"`
+}
+
 type RoundSnapshot struct {
+	Roster              []SnapshotPanelist    `json:"roster,omitempty" bson:"roster,omitempty"`
 	ID                  string                `json:"id" bson:"id"`
 	Revision            int                   `json:"revision" bson:"revision"`
 	RoundNumber         int                   `json:"roundNumber" bson:"roundNumber"`

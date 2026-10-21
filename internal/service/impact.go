@@ -258,6 +258,13 @@ func parseImpact(report ProjectReport, data []byte) (ImpactPreview, error) {
 			continue
 		}
 		percent := score / maximum * 100
+		if scale == "persen" {
+			percent = score
+		}
+		// Normalize only representational noise at the recorded decision boundary.
+		if math.Abs(percent-source.Statistics.OperationalCutoff) <= 1e-10 {
+			percent = source.Statistics.OperationalCutoff
+		}
 		passed := percent >= source.Statistics.OperationalCutoff
 		result.Scores = append(result.Scores, domain.ImpactScore{ParticipantID: uid, SubjectCode: sub, Score: score, Scale: scale, Maximum: maximum, Percentage: percent, Passed: passed})
 		agg := aggregates[sub]

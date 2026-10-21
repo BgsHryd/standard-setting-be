@@ -192,7 +192,7 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	}
 	ready := len(scores) == len(panelists) && len(scores) > 0
 	if ready {
-		stats := domain.ComputeStatistics(scores, p.RoundingPolicy)
+		stats := domain.ComputeStatistics(scores, projectRoundingPolicy(p))
 		stats.RoundNumber = round.Number
 		stats.Revision = domain.RoundRevision(round)
 		result.Statistics = &stats

@@ -124,15 +124,16 @@ func (h *Handler) reviewSubmission(c *fiber.Ctx) error {
 		return err
 	}
 	var req struct {
-		RoundNumber   int `json:"roundNumber"`
-		RoundRevision int `json:"roundRevision"`
-		Version       int `json:"version"`
+		RoundNumber      int `json:"roundNumber"`
+		RoundRevision    int `json:"roundRevision"`
+		Version          int `json:"version"`
+		CandidateVersion int `json:"candidateVersion"`
 	}
 	if err := c.BodyParser(&req); err != nil || req.RoundNumber < 1 || req.RoundRevision < 1 {
 		return errorResponse(c, 422, "putaran dan revisi wajib diisi")
 	}
 	u := getClaims(c)
-	r, err := h.service.ReviewSubmission(c.UserContext(), u.Subject, u.ProjectID, u.SubjectCode, req.RoundNumber, c.Params("itemId"), req.RoundRevision, req.Version)
+	r, err := h.service.ReviewSubmission(c.UserContext(), u.Subject, u.ProjectID, u.SubjectCode, req.RoundNumber, c.Params("itemId"), req.RoundRevision, req.Version, req.CandidateVersion)
 	if err != nil {
 		return coreError(c, err, 422)
 	}

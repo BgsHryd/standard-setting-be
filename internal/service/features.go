@@ -313,7 +313,7 @@ func (s *Service) SaveSubmissionWithOptions(ctx context.Context, userID, name, p
 	})
 	return result, err
 }
-func (s *Service) ReviewSubmission(ctx context.Context, user, project, subject string, number int, item string, revision, version int) (domain.Submission, error) {
+func (s *Service) ReviewSubmission(ctx context.Context, user, project, subject string, number int, item string, revision, version int, candidateVersion ...int) (domain.Submission, error) {
 	rows, err := s.store.ListSubmissions(ctx, project, subject, number, user)
 	if err != nil {
 		return domain.Submission{}, err
@@ -325,6 +325,9 @@ func (s *Service) ReviewSubmission(ctx context.Context, user, project, subject s
 	sub, err := subjectOf(p, subject)
 	if err != nil {
 		return domain.Submission{}, err
+	}
+	if p.FeatureVersion >= 1 && (len(candidateVersion) == 0 || candidateVersion[0] != sub.CandidateVersion) {
+		return domain.Submission{}, ErrRevisionConflict
 	}
 	for _, row := range rows {
 		if row.ItemID == item {
@@ -422,11 +425,29 @@ func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.
 	if err != nil {
 		return domain.RoundSnapshot{}, err
 	}
-	snap := domain.RoundSnapshot{ID: fmt.Sprintf("%s-r%d", r.ID, domain.RoundRevision(r)), Revision: domain.RoundRevision(r), RoundNumber: r.Number, SubjectCode: sub.Code, PanelistIDs: []string{}, ItemStatistics: map[string]domain.ItemResult{}, Submissions: all, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: sub.CandidateVersion, RoundingPolicy: p.RoundingPolicy, CreatedAt: time.Now().UTC()}
+	snap := domain.RoundSnapshot{ID: fmt.Sprintf("%s-r%d", r.ID, domain.RoundRevision(r)), Revision: domain.RoundRevision(r), RoundNumber: r.Number, SubjectCode: sub.Code, PanelistIDs: []string{}, ItemStatistics: map[string]domain.ItemResult{}, Submissions: all, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: sub.CandidateVersion, RoundingPolicy: projectRoundingPolicy(p), CreatedAt: time.Now().UTC()}
 	for _, row := range rows {
 		if !contains(snap.PanelistIDs, row.PanelistID) {
 			snap.PanelistIDs = append(snap.PanelistIDs, row.PanelistID)
 		}
+	}
+	users, err := s.store.ListUsers(ctx, p.ID)
+	if err != nil {
+		return domain.RoundSnapshot{}, err
+	}
+	snap.Roster = []domain.SnapshotPanelist{}
+	for _, u := range users {
+		if u.Role != domain.RolePanelist || u.SubjectCode != sub.Code {
+			continue
+		}
+		reason := ""
+		for _, e := range r.ExcludedPanelists {
+			if e.PanelistID == u.ID {
+				reason = e.Reason
+				break
+			}
+		}
+		snap.Roster = append(snap.Roster, domain.SnapshotPanelist{PanelistID: u.ID, PanelistName: u.Name, Included: contains(snap.PanelistIDs, u.ID), Active: u.Active, Removed: u.Removed, ExclusionReason: reason})
 	}
 	scores := []float64{}
 	for _, id := range snap.PanelistIDs {
@@ -441,7 +462,7 @@ func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.
 		}
 		scores = append(scores, weighted/total)
 	}
-	snap.Statistics = domain.ComputeStatistics(scores, p.RoundingPolicy)
+	snap.Statistics = domain.ComputeStatistics(scores, projectRoundingPolicy(p))
 	snap.Statistics.RoundNumber = r.Number
 	snap.Statistics.Revision = snap.Revision
 	snap.Statistics.PanelistIDs = snap.PanelistIDs
@@ -453,7 +474,7 @@ func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.
 				values = append(values, responseValue(row.Answer, item.MaxScore))
 			}
 		}
-		stats := domain.ComputeStatistics(values, p.RoundingPolicy)
+		stats := domain.ComputeStatistics(values, projectRoundingPolicy(p))
 		stats.PanelistIDs = snap.PanelistIDs
 		stats.RoundNumber = r.Number
 		stats.Revision = snap.Revision
@@ -488,4 +509,14 @@ func (s *Service) CopyProject(ctx context.Context, id, name, actor string) (doma
 		return s.recordAudit(tx, actor, result.ID, result.ID, "project_copy")
 	})
 	return result, err
+}
+
+func projectRoundingPolicy(p domain.Project) string {
+	if p.RoundingPolicy != "" {
+		return p.RoundingPolicy
+	}
+	if p.FeatureVersion < 1 {
+		return "none"
+	}
+	return "ceil_1pp"
 }

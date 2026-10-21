@@ -194,8 +194,10 @@ func (s *Service) ImportWorkbook(ctx context.Context, id string, step int, data 
 			return err
 		}
 		byName := map[string]domain.Subject{}
+		byCode := map[string]domain.Subject{}
 		for _, sub := range catalog {
 			byName[domain.NormalizeSubjectName(sub.Name)] = sub
+			byCode[strings.ToUpper(strings.TrimSpace(sub.Code))] = sub
 		}
 		if step == 2 {
 			if !p.ItemsEditable {
@@ -210,8 +212,15 @@ func (s *Service) ImportWorkbook(ctx context.Context, id string, step int, data 
 				}
 				result.Count++
 				sub, exists := byName[domain.NormalizeSubjectName(mapel)]
-				if !exists {
-					problem(rowNo, "mata_pelajaran", mapel, "mata pelajaran tidak ada di database")
+				coded, codeExists := byCode[strings.ToUpper(strings.TrimSpace(mapel))]
+				if exists && codeExists && sub.Code != coded.Code {
+					exists = false
+					problem(rowNo, "mata_pelajaran", mapel, "nama dan kode mata pelajaran ambigu; gunakan pengenal yang tidak ambigu")
+				} else if codeExists {
+					sub = coded
+					exists = true
+				} else if !exists {
+					problem(rowNo, "mata_pelajaran", mapel, "nama atau kode mata pelajaran tidak ada di database")
 				}
 				item, findErr := s.store.GetItem(tx, itemID)
 				if errors.Is(findErr, mongo.ErrNoDocuments) || itemID == "" {

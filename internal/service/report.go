@@ -21,10 +21,11 @@ type ReportRound struct {
 	Status   string `json:"status"`
 }
 type ReportResponse struct {
-	Submission domain.Submission `json:"submission"`
-	Included   bool              `json:"included"`
-	Reviewed   bool              `json:"reviewed"`
-	Missing    bool              `json:"missing"`
+	Roster     *domain.SnapshotPanelist `json:"roster,omitempty"`
+	Submission domain.Submission        `json:"submission"`
+	Included   bool                     `json:"included"`
+	Reviewed   bool                     `json:"reviewed"`
+	Missing    bool                     `json:"missing"`
 }
 type ReportSnapshotReference struct {
 	ID               string            `json:"id"`
@@ -36,6 +37,7 @@ type ReportSnapshotReference struct {
 	CreatedAt        time.Time         `json:"createdAt"`
 }
 type ReportSubject struct {
+	RosterComplete      bool                         `json:"rosterComplete"`
 	ArchiveSnapshots    []ReportSnapshotReference    `json:"archiveSnapshots"`
 	Historical          bool                         `json:"historical"`
 	Subject             domain.ProjectSubject        `json:"subject"`
@@ -166,15 +168,43 @@ func (s *Service) ProjectReportRevision(ctx context.Context, id string, number, 
 				r.CandidateVersion = snapshot.CandidateVersion
 				r.Round.Revision = snapshot.Revision
 				seen := map[string]bool{}
+				roster := append([]domain.SnapshotPanelist(nil), snapshot.Roster...)
+				r.RosterComplete = len(roster) > 0
+				if !r.RosterComplete {
+					for _, uid := range snapshot.PanelistIDs {
+						roster = append(roster, domain.SnapshotPanelist{PanelistID: uid, Included: true})
+					}
+					if r.Warning != "" {
+						r.Warning += " "
+					}
+					r.Warning += "Snapshot lama belum menyimpan roster lengkap; peserta tanpa respons yang tidak masuk statistik tidak dapat direkonstruksi."
+				}
+				rosterByID := map[string]domain.SnapshotPanelist{}
+				for _, person := range roster {
+					rosterByID[person.PanelistID] = person
+				}
 				for _, row := range snapshot.Submissions {
 					reviewed := row.ReviewRevision == snapshot.Revision || (snapshot.Revision <= 1 && row.ReviewRevision == 0)
-					r.Responses = append(r.Responses, ReportResponse{Submission: row, Included: contains(snapshot.PanelistIDs, row.PanelistID), Reviewed: reviewed})
+					response := ReportResponse{Submission: row, Included: contains(snapshot.PanelistIDs, row.PanelistID), Reviewed: reviewed}
+					if person, ok := rosterByID[row.PanelistID]; ok && r.RosterComplete {
+						response.Roster = &person
+					}
+					r.Responses = append(r.Responses, response)
 					seen[row.PanelistID+"\x00"+row.ItemID] = true
 				}
-				for _, uid := range snapshot.PanelistIDs {
+				for _, person := range roster {
 					for itemID := range snapshot.ItemStatistics {
-						if !seen[uid+"\x00"+itemID] {
-							r.Responses = append(r.Responses, ReportResponse{Submission: domain.Submission{ProjectID: id, SubjectCode: sub.Code, PanelistID: uid, ItemID: itemID, RoundNumber: snapshot.RoundNumber}, Included: true, Missing: true})
+						if !seen[person.PanelistID+"\x00"+itemID] {
+							row := domain.Submission{ProjectID: id, SubjectCode: sub.Code, PanelistID: person.PanelistID, PanelistName: person.PanelistName, ItemID: itemID, RoundNumber: snapshot.RoundNumber, CandidateVersion: snapshot.CandidateVersion}
+							item, e := s.store.GetItem(tx, itemID)
+							if e == nil {
+								row.Answer.QuestionType = item.QuestionType
+							}
+							response := ReportResponse{Submission: row, Included: person.Included, Missing: true}
+							if r.RosterComplete {
+								response.Roster = &person
+							}
+							r.Responses = append(r.Responses, response)
 						}
 					}
 				}
@@ -307,11 +337,17 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 				reviewed = nil
 				missing = nil
 			}
-			rows = append(rows, []any{1, id, report.Project.Code, sub.Subject.Code, sub.Round.Number, sub.Round.Revision, sub.SnapshotID, sub.Legacy, sub.Historical, row.PanelistID, row.PanelistName, row.ItemID, string(row.Answer.QuestionType), val, distribution, row.Status, included, reviewed, missing, row.Version, row.CandidateVersion, sub.RoundingPolicy, updated, report.GeneratedAt.Format(time.RFC3339)})
+			var active, removed, reason any
+			if response.Roster != nil {
+				active = response.Roster.Active
+				removed = response.Roster.Removed
+				reason = response.Roster.ExclusionReason
+			}
+			rows = append(rows, []any{1, id, report.Project.Code, sub.Subject.Code, sub.Round.Number, sub.Round.Revision, sub.SnapshotID, sub.Legacy, sub.Historical, row.PanelistID, row.PanelistName, row.ItemID, string(row.Answer.QuestionType), val, distribution, row.Status, included, reviewed, missing, row.Version, row.CandidateVersion, sub.RoundingPolicy, updated, report.GeneratedAt.Format(time.RFC3339), sub.RosterComplete, active, removed, reason})
 		}
 	}
 	if kind == "raw" {
-		headers = []string{"schemaVersion", "projectId", "projectCode", "subjectCode", "round", "revision", "snapshotId", "legacy", "historical", "panelistId", "panelistName", "itemId", "questionType", "value", "distributionJSON", "status", "included", "reviewed", "missing", "submissionVersion", "candidateVersion", "roundingPolicy", "updatedAt", "generatedAt"}
+		headers = []string{"schemaVersion", "projectId", "projectCode", "subjectCode", "round", "revision", "snapshotId", "legacy", "historical", "panelistId", "panelistName", "itemId", "questionType", "value", "distributionJSON", "status", "included", "reviewed", "missing", "submissionVersion", "candidateVersion", "roundingPolicy", "updatedAt", "generatedAt", "rosterComplete", "activeAtSnapshot", "removedAtSnapshot", "exclusionReason"}
 	}
 	return encodeReportCSV(headers, rows, locale)
 }

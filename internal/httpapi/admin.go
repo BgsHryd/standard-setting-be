@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"io"
+	"standard-setting/backend/internal/service"
 	"strconv"
 	"strings"
 )
@@ -16,13 +18,25 @@ func (h *Handler) listSubjects(c *fiber.Ctx) error {
 }
 func (h *Handler) createSubject(c *fiber.Ctx) error {
 	var input struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		Code      string `json:"code"`
+		KodeMapel string `json:"kode_mapel"`
 	}
 	if err := c.BodyParser(&input); err != nil {
 		return errorResponse(c, 422, "nama mata pelajaran tidak valid")
 	}
-	data, err := h.service.CreateSubject(c.UserContext(), input.Name)
+	if input.Code != "" && input.KodeMapel != "" && strings.ToUpper(strings.TrimSpace(input.Code)) != strings.ToUpper(strings.TrimSpace(input.KodeMapel)) {
+		return errorResponse(c, 422, "kode mapel tidak konsisten")
+	}
+	code := input.KodeMapel
+	if code == "" {
+		code = input.Code
+	}
+	data, err := h.service.CreateSubject(c.UserContext(), input.Name, code)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidSubject) {
+			return errorResponse(c, 422, err.Error())
+		}
 		return errorResponse(c, 409, err.Error())
 	}
 	return success(c, data)

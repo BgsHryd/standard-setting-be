@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"standard-setting/backend/internal/domain"
 	"strings"
 	"time"
@@ -151,8 +152,13 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 				return errors.New("deskripsi kandidat maksimal 8.000 karakter")
 			}
 			sub.CandidateVersion = previous.CandidateVersion
+			sub.CandidateHistory = append([]domain.CandidateDefinitionRevision(nil), previous.CandidateHistory...)
 			if sub.CandidateDefinition != previous.CandidateDefinition {
+				if previous.CandidateDefinition != "" && len(sub.CandidateHistory) == 0 {
+					sub.CandidateHistory = append(sub.CandidateHistory, domain.CandidateDefinitionRevision{Version: previous.CandidateVersion, Definition: previous.CandidateDefinition, CreatedAt: old.UpdatedAt})
+				}
 				sub.CandidateVersion++
+				sub.CandidateHistory = append(sub.CandidateHistory, domain.CandidateDefinitionRevision{Version: sub.CandidateVersion, Definition: sub.CandidateDefinition, ActorID: userID, CreatedAt: now})
 				if err = s.recordAudit(tx, userID, sub.Code, p.ID, "candidate_definition_update"); err != nil {
 					return err
 				}
@@ -302,11 +308,19 @@ func (s *Service) ListSubjects(ctx context.Context) ([]domain.Subject, error) {
 	}
 	return subjects, nil
 }
-func (s *Service) CreateSubject(ctx context.Context, name string) (domain.Subject, error) {
+
+var ErrInvalidSubject = errors.New("mata pelajaran tidak valid")
+var subjectCodePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_-]{1,19}$`)
+
+func (s *Service) CreateSubject(ctx context.Context, name, code string) (domain.Subject, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if !subjectCodePattern.MatchString(code) {
+		return domain.Subject{}, fmt.Errorf("%w: kode mapel wajib 2–20 huruf/angka, boleh - atau _, dan diawali huruf", ErrInvalidSubject)
+	}
 	name = strings.Join(strings.Fields(name), " ")
 	if len([]rune(name)) < 2 || len([]rune(name)) > 100 {
-		return domain.Subject{}, errors.New("nama mata pelajaran harus 2–100 karakter")
+		return domain.Subject{}, fmt.Errorf("%w: nama mata pelajaran harus 2–100 karakter", ErrInvalidSubject)
 	}
-	sub := domain.Subject{Code: strings.ToUpper(newID("MP")), Name: name, NormalizedName: domain.NormalizeSubjectName(name)}
+	sub := domain.Subject{Code: code, Name: name, NormalizedName: domain.NormalizeSubjectName(name)}
 	return sub, s.store.CreateSubject(ctx, sub)
 }
