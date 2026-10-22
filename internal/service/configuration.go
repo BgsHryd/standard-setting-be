@@ -151,6 +151,10 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			if len([]rune(sub.CandidateDefinition)) > 8000 {
 				return errors.New("deskripsi kandidat maksimal 8.000 karakter")
 			}
+			sub.CandidateDefinition = domain.NormalizeCandidateDefinition(sub.CandidateDefinition)
+			if len([]rune(sub.CandidateDefinition)) > 8000 {
+				return errors.New("deskripsi kandidat maksimal 8.000 karakter")
+			}
 			sub.CandidateVersion = previous.CandidateVersion
 			sub.CandidateHistory = append([]domain.CandidateDefinitionRevision(nil), previous.CandidateHistory...)
 			if sub.CandidateDefinition != previous.CandidateDefinition {

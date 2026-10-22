@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -48,7 +47,7 @@ func ValidateActivation(project Project) []string {
 		errors = append(errors, "minimal satu mata pelajaran wajib dipilih")
 	}
 	for _, subject := range project.Subjects {
-		if project.FeatureVersion >= 1 && strings.TrimSpace(subject.CandidateDefinition) == "" {
+		if project.FeatureVersion >= 1 && NormalizeCandidateDefinition(subject.CandidateDefinition) == "" {
 			errors = append(errors, fmt.Sprintf("deskripsi kandidat batas lulus %s wajib diisi", subject.Name))
 		}
 		if len(subject.ItemIDs) == 0 {
