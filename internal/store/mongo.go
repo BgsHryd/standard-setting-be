@@ -322,11 +322,6 @@ func (m *Mongo) Seed(ctx context.Context, initialPasswordHash string) error {
  if err:=m.BootstrapAdmin(ctx,initialPasswordHash);err!=nil{return err}
  return m.SeedDemoItems(ctx)
 }
-func(m *Mongo) BootstrapAdmin(ctx context.Context,initialPasswordHash string)error{
- now:=time.Now().UTC()
- admin:=domain.User{ID:"user-superadmin",Username:"superadmin",Name:"Admin Super",PasswordHash:initialPasswordHash,Role:domain.RoleAdminSuper,MustChangePassword:true,Active:true,CreatedAt:now,UpdatedAt:now}
- _,err:=m.users.UpdateOne(ctx,bson.M{"username":admin.Username},bson.M{"$setOnInsert":admin},options.Update().SetUpsert(true));return err
-}
 func(m *Mongo) SeedDemoItems(ctx context.Context)error{
  now:=time.Now().UTC()
 

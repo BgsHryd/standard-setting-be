@@ -17,10 +17,11 @@ go run ./cmd/server
 
 Jangan menimpa `.env` yang telah dikonfigurasi. `main.go` membaca environment proses, bukan file `.env` secara otomatis. Bila MongoDB/Redis sudah tersedia, gunakan service tersebut; MongoDB wajib replica set. Compose sekarang menyiapkan single-node rs0. Untuk container lama baca [prosedur tanpa menghapus volume](docs/MIGRATION.md#replica-set-untuk-transaksi-p1). Untuk Redis yang sudah memakai 6379, compose cukup dijalankan untuk service `mongodb`.
 
-Migration `up` menerapkan versi 1–3 secara aditif dan tidak membuat akun. `go run ./cmd/migrate -command seed` menambahkan bootstrap `superadmin` dan 36 butir contoh, tanpa menimpa dokumen existing. Startup server hanya bootstrap admin secara default; butir demo hanya dibuat bila `SEED_DEMO_ITEMS=true` (default false). Flag false tidak menghapus contoh existing. Password awal mengikuti `INITIAL_PASSWORD`, fallback `12345*`; first login wajib menggantinya. Redis tidak memerlukan migration schema.
+Migration `up` menerapkan versi 1–3 secara aditif dan tidak membuat akun. `go run ./cmd/migrate -command seed` menambahkan bootstrap `superadmin` dan `admin_bp3` serta 36 butir contoh, tanpa menimpa dokumen existing. Startup server hanya bootstrap kedua admin secara default; butir demo hanya dibuat bila `SEED_DEMO_ITEMS=true` (default false). Flag false tidak menghapus contoh existing. Password awal mengikuti `INITIAL_PASSWORD`, fallback `12345*`; first login wajib menggantinya. Bootstrap tidak mereset password/status existing dan mengikuti username case-insensitive. Redis tidak memerlukan migration schema.
 
 ## Dokumen
 
+- [Migrasi MongoDB/Redis ke VM terpisah dan akun admin_bp3](../output/deployment/PANDUAN-MIGRASI-MONGODB-REDIS-VM-TERPISAH-2026-10-23.md)
 - [Indeks dokumentasi BE](docs/README.md)
 - [Dokumentasi fitur dan flow API](docs/FITUR-DAN-ALUR-API.md)
 - [OpenAPI 3.0.3](docs/openapi.yaml)

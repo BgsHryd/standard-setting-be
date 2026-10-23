@@ -1,14 +1,14 @@
 openapi: 3.0.3
 info:
   title: Standard Setting API
-  version: '2026-10-14'
-  description: |
-    Kontrak statis berdasarkan backend-ss/internal/httpapi/router.go dan model aktif.
-    Base path /api/v1. Semua operasi sukses memakai HTTP 200, bukan 201/204.
-    Nama collection akun aktual users. PasswordHash tidak pernah diekspor JSON.
-    Grant role diterapkan per route dan scope dibaca ulang dari akun aktif.
-    Perubahan multi-document menggunakan transaksi MongoDB; diperlukan replica set.
-    FE menampilkan error, tanpa fallback demo atau status sukses semu.
+  version: '2026-10-20'
+  description: >-
+    Kontrak statis berdasarkan seluruh file produksi internal/httpapi/*.go dan model aktif. Base path /api/v1.
+    JSON sukses memakai HTTP 200 dan envelope status/data; unduhan CSV/XLSX mengirim berkas langsung. Akun
+    dibaca ulang dari MongoDB, authVersion mencabut sesi lama, dan X-Request-ID dibuat server untuk korelasi
+    audit. Password/hash tidak diekspor. Operasi multi-document memakai transaksi MongoDB replica set. Borang
+    memakai gate kontak, periode UTC dan revisi optimistik. Snapshot final tidak dibangun ulang dari roster
+    saat ini. Dokumen ini menjelaskan kontrak, bukan laporan kelulusan QA/deployment.
 servers:
   - url: http://127.0.0.1:18081/api/v1
     description: Default development
@@ -25,10 +25,16 @@ tags:
   - name: Monitoring
   - name: Rounds
   - name: Panelist
+  - name: Profile
+  - name: Reports
+  - name: Impact
+  - name: Evaluation
+  - name: Audit
 paths:
   /health:
     get:
-      tags: [Health]
+      tags:
+        - Health
       security: []
       operationId: health
       summary: Respons hidup service
@@ -40,98 +46,165 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [status, service]
+                required:
+                  - status
+                  - service
                 properties:
-                  status: {type: string, enum: [ok]}
-                  service: {type: string, enum: [standard-setting]}
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  service:
+                    type: string
+                    enum:
+                      - standard-setting
   /auth/login:
     post:
-      tags: [Auth]
+      tags:
+        - Auth
       security: []
       operationId: login
       summary: Login dengan username dan password
-      description: Input berasal dari form login. User aktif dan bcrypt harus cocok. Membuat JWT 15 menit dan refresh token Redis 7 hari.
+      description: >-
+        User aktif dan bcrypt harus cocok. Membuat JWT 15 menit dan refresh Redis 7 hari. Counter atomik
+        Redis: 5 percobaan/username dan 20/IP per15menit; sukses mereset username, IP tetap membatasi
+        spraying. Header IP hanya dipercaya dari proxy yang dikonfigurasi. Kegagalan tidak membocorkan
+        username terdaftar. Login/gagal login diaudit tanpa rahasia.
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/LoginRequest'}
-            example: {username: superadmin, password: '<password input user>'}
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: superadmin
+              password: <password input user>
       responses:
-        '200': {$ref: '#/components/responses/AuthResponse'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/Error'}
+        '200':
+          $ref: '#/components/responses/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+        default:
+          $ref: '#/components/responses/Error'
   /auth/refresh:
     post:
-      tags: [Auth]
+      tags:
+        - Auth
       security: []
       operationId: refresh
       summary: Rotasi refresh token dan access token
-      description: refreshToken dari localStorage session. Token lama dikonsumsi dengan GETDEL. apiFetch melakukan satu retry saat request awal mendapat 401.
+      description: >-
+        Refresh token dikonsumsi dengan GETDEL dan dirotasi; token hilang/terpakai/versi auth berubah
+        mendapat401. Kegagalan Redis saat limiter produksi dikonfigurasi mendapat503. contactRequired dihitung
+        ulang.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [refreshToken]
+              required:
+                - refreshToken
               properties:
-                refreshToken: {type: string, minLength: 1}
+                refreshToken:
+                  type: string
+                  minLength: 1
       responses:
-        '200': {$ref: '#/components/responses/AuthResponse'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/Error'}
+        '200':
+          $ref: '#/components/responses/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+        default:
+          $ref: '#/components/responses/Error'
   /auth/change-password:
     post:
-      tags: [Auth]
-      x-roles: [admin_super, pic_mapel, panelis]
+      tags:
+        - Auth
+      x-roles:
+        - admin_super
+        - pic_mapel
+        - panelis
       operationId: changePassword
       summary: Ganti password first login
-      description: |
+      description: |-
         UserId dari JWT sub. Confirmation password hanya divalidasi FE, tidak dikirim.
         Endpoint tidak membutuhkan passwordChanged middleware. New password minimal
         6 byte di BE dan berbeda dari current password. Respons menerbitkan session
         baru dengan mustChangePassword false; FE mengganti access/refresh token.
+         Password dan authVersion diperbarui bersamaan dengan audit dalam transaksi; access/refresh lama ditolak. Tidak menyediakan kemampuan melihat password.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [currentPassword, newPassword]
+              required:
+                - currentPassword
+                - newPassword
               properties:
-                currentPassword: {type: string}
-                newPassword: {type: string, minLength: 6}
-      responses:
-        '200': {$ref: '#/components/responses/AuthResponse'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/Error'}
-  /me:
-    get:
-      tags: [Auth]
-      x-roles: [admin_super, pic_mapel, panelis]
-      operationId: me
-      summary: Claims session aktif
-      description: Claims session setelah role, scope, nama dan first-login dibaca ulang dari akun aktif; memerlukan password selesai.
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 6
       responses:
         '200':
-          description: JWT claims
+          $ref: '#/components/responses/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+        default:
+          $ref: '#/components/responses/Error'
+  /me:
+    get:
+      tags:
+        - Auth
+      x-roles:
+        - admin_super
+        - pic_mapel
+        - panelis
+      operationId: me
+      summary: Profil routing sesi aktif
+      description: >-
+        Membaca user aktif dan kebijakan kontak terkini. Respons UserView berisi id dan contactRequired, bukan
+        payload Claims JWT. Password wajib sudah diganti; kontak belum lengkap tetap dapat membaca /me.
+      responses:
+        '200':
+          description: Profil sesi aktif
           content:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
-                    properties: {data: {$ref: '#/components/schemas/Claims'}}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '428': {$ref: '#/components/responses/PasswordRequired'}
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
   /projects:
     get:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: listProjects
       summary: Daftar seluruh proyek
       description: Urutan updatedAt descending. Pencarian/statistik di FE; tidak ada query search/pagination.
@@ -142,64 +215,101 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
                     properties:
-                      data: {type: array, items: {$ref: '#/components/schemas/Project'}}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Project'
+        default:
+          $ref: '#/components/responses/ProtectedError'
     post:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: createProject
       summary: Simpan Draft baru
-      description: Saat id kosong, BE membuat id/code/status Draft dan createdBy dari akun. Alokasi item dan penyimpanan Project dalam transaksi; field kepemilikan/status client diabaikan.
-      requestBody: {$ref: '#/components/requestBodies/ProjectBody'}
+      description: >-
+        Saat id kosong, BE membuat id/code/status Draft dan createdBy dari akun. Alokasi item dan penyimpanan
+        Project dalam transaksi; field kepemilikan/status client diabaikan.
+      requestBody:
+        $ref: '#/components/requestBodies/ProjectBody'
       responses:
-        '200': {$ref: '#/components/responses/ProjectResponse'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/ProjectResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
     get:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: getProject
       summary: Baca konfigurasi Project
       description: id dari row daftar proyek/page.params. Data digunakan hydrate form edit.
       responses:
-        '200': {$ref: '#/components/responses/ProjectResponse'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/ProjectResponse'
+        default:
+          $ref: '#/components/responses/ProtectedError'
     put:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: updateProject
       summary: Simpan konfigurasi lengkap Project
-      description: |
+      description: >
         Bukan PATCH; ReplaceOne dokumen penuh. Path id mengalahkan body.id. FE
+
         mempertahankan field hasil GET termasuk code, createdBy dan timestamps.
-        Update Draft dan Active. Version body harus cocok dengan versi tersimpan. Code/status/createdBy tetap; perubahan butir hanya sebelum ada respons. Slot personel menjaga identitas existing. Completed terkunci secara struktural.
-      requestBody: {$ref: '#/components/requestBodies/ProjectBody'}
+
+        Update Draft dan Active. Version body harus cocok dengan versi tersimpan. Code/status/createdBy tetap;
+        perubahan butir hanya sebelum ada respons. Slot personel menjaga identitas existing. Completed
+        terkunci secara struktural.
+      requestBody:
+        $ref: '#/components/requestBodies/ProjectBody'
       responses:
-        '200': {$ref: '#/components/responses/ProjectResponse'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/ProjectResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
     delete:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: deleteProject
       summary: Hapus hanya Project Draft
-      description: Hanya Draft; menghapus project, melepas alokasi dan menonaktifkan akun proyek dalam transaksi. Akun tetap disimpan sebagai jejak historis.
+      description: >-
+        Hanya Draft; menghapus project, melepas alokasi dan menonaktifkan akun proyek dalam transaksi. Akun
+        tetap disimpan sebagai jejak historis.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [confirmation]
-              properties: {confirmation: {type: string, enum: [HAPUS PROYEK]}}
+              required:
+                - confirmation
+              properties:
+                confirmation:
+                  type: string
+                  enum:
+                    - HAPUS PROYEK
       responses:
         '200':
           description: Project dihapus
@@ -207,88 +317,145 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
                     properties:
-                      data: {type: object, properties: {deleted: {type: boolean, example: true}}}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                      data:
+                        type: object
+                        properties:
+                          deleted:
+                            type: boolean
+                            example: true
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/activate:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
     post:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: activateProject
       summary: Validasi checklist dan aktifkan proyek
-      description: Tanpa body. Hanya Draft dengan checklist lengkap, akun aktif ditugaskan dan item dimiliki proyek. Membuka round 1 active tiap mapel dan aktivasi dalam transaksi.
+      description: >-
+        Tanpa body. Hanya Draft dengan checklist lengkap, akun aktif ditugaskan dan item dimiliki proyek.
+        Membuka round 1 active tiap mapel dan aktivasi dalam transaksi.
       responses:
-        '200': {$ref: '#/components/responses/ProjectResponse'}
+        '200':
+          $ref: '#/components/responses/ProjectResponse'
         '422':
           description: Checklist belum lengkap dengan errors array
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
-              example: {status: error, message: konfigurasi proyek belum lengkap, errors: [akun proyek belum dibuat]}
-        default: {$ref: '#/components/responses/ProtectedError'}
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                status: error
+                message: konfigurasi proyek belum lengkap
+                errors:
+                  - akun proyek belum dibuat
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/complete:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
     post:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: completeProject
       summary: Tandai proyek active sebagai completed
-      description: Hanya active; setiap mapel wajib punya putaran finalized dengan semua respons valid dan lengkap. Putaran aktif berikutnya harus kosong. Transaksi menyimpan snapshot finalResult per item, menandai tested/readOnly, menutup round kosong dan menyelesaikan project.
+      description: >-
+        Hanya active; setiap mapel wajib punya putaran finalized dengan semua respons valid dan lengkap.
+        Putaran aktif berikutnya harus kosong. Transaksi menyimpan snapshot finalResult per item, menandai
+        tested/readOnly, menutup round kosong dan menyelesaikan project.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [confirmation]
-              properties: {confirmation: {type: string, enum: [SELESAIKAN PROYEK]}}
+              required:
+                - confirmation
+              properties:
+                confirmation:
+                  type: string
+                  enum:
+                    - SELESAIKAN PROYEK
       responses:
-        '200': {$ref: '#/components/responses/ProjectResponse'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/ProjectResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/accounts/generate:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
     post:
-      tags: [Users]
-      x-roles: [admin_super]
+      tags:
+        - Users
+      x-roles:
+        - admin_super
       operationId: generateAccounts
       summary: Rekonsiliasi PIC dan Panelis proyek Draft atau Active
-      description: Payload dari slot akun tersimpan pada langkah 4. Username otomatis atau custom; password akun baru dari INITIAL_PASSWORD. Identitas/password/status existing dipertahankan. Seluruh batch dalam transaksi dan idempotent.
+      description: >-
+        Payload dari slot akun tersimpan pada langkah 4. Username otomatis atau custom; password akun baru
+        dari INITIAL_PASSWORD. Identitas/password/status existing dipertahankan. Seluruh batch dalam transaksi
+        dan idempotent.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [accounts]
+              required:
+                - accounts
               properties:
                 accounts:
                   type: array
                   items:
                     type: object
-                    required: [slotId, name, role, subjectCode]
+                    required:
+                      - slotId
+                      - name
+                      - role
+                      - subjectCode
                     properties:
-                      slotId: {type: string}
-                      username: {type: string, description: Opsional; kosong menghasilkan username otomatis untuk slot baru}
-                      name: {type: string}
-                      role: {type: string, enum: [pic_mapel, panelis]}
-                      subjectCode: {type: string, example: MAT}
+                      slotId:
+                        type: string
+                      username:
+                        type: string
+                        description: Opsional; kosong menghasilkan username otomatis untuk slot baru
+                      name:
+                        type: string
+                      role:
+                        type: string
+                        enum:
+                          - pic_mapel
+                          - panelis
+                      subjectCode:
+                        type: string
+                        example: MAT
       responses:
-        '200': {$ref: '#/components/responses/UsersResponse'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/UsersResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /subjects:
     get:
-      tags: [Items]
-      x-roles: [admin_super]
+      tags:
+        - Items
+      x-roles:
+        - admin_super
       operationId: listSubjects
       summary: Katalog mapel dan jumlah butir setiap status
       responses:
@@ -299,22 +466,45 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: {type: array, items: {$ref: '#/components/schemas/Subject'}}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Subject'
+        default:
+          $ref: '#/components/responses/ProtectedError'
     post:
-      tags: [Items]
-      x-roles: [admin_super]
+      tags:
+        - Items
+      x-roles:
+        - admin_super
       operationId: createSubject
-      summary: Tambah nama mapel unik setelah normalisasi spasi dan kapital
+      summary: Tambah mapel dengan kode dan nama unik
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name]
+              required:
+                - name
+              anyOf:
+                - required: [kode_mapel]
+                - required: [code]
               properties:
-                name: {type: string, minLength: 2, maxLength: 100}
+                kode_mapel:
+                  type: string
+                  minLength: 2
+                  maxLength: 20
+                  pattern: '^[A-Za-z][A-Za-z0-9_-]{1,19}$'
+                  description: Kode manual, dinormalisasi menjadi huruf besar. Harus unik.
+                  example: SEJ
+                code:
+                  type: string
+                  description: Alias kode_mapel; jika keduanya dikirim harus sama setelah normalisasi.
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
       responses:
         '200':
           description: Mapel dibuat
@@ -323,15 +513,22 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: {$ref: '#/components/schemas/Subject'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                  data:
+                    $ref: '#/components/schemas/Subject'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/accounts:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
     get:
-      tags: [Users]
-      x-roles: [admin_super]
+      tags:
+        - Users
+      x-roles:
+        - admin_super
       operationId: accountRows
       summary: Slot akun aktif, nonaktif, pending dan dihapus
       responses:
@@ -342,17 +539,24 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: {type: array, items: {$ref: '#/components/schemas/AccountRow'}}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccountRow'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /users/{id}/active:
     parameters:
       - name: id
         in: path
         required: true
-        schema: {type: string}
+        schema:
+          type: string
     patch:
-      tags: [Users]
-      x-roles: [admin_super]
+      tags:
+        - Users
+      x-roles:
+        - admin_super
       operationId: userActive
       summary: Ubah akses peserta dan invalidasi sesi lama
       description: Tidak untuk superadmin atau penugasan removed; nonaktif dikeluarkan dari roster efektif.
@@ -362,22 +566,30 @@ paths:
           application/json:
             schema:
               type: object
-              required: [active]
+              required:
+                - active
               properties:
-                active: {type: boolean}
+                active:
+                  type: boolean
       responses:
-        '200': {description: Status diperbarui}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          description: Status diperbarui
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /users/{id}/reset-password:
     parameters:
       - name: id
         in: path
         required: true
-        schema: {type: string}
+        schema:
+          type: string
     post:
-      tags: [Users]
-      x-roles: [admin_super]
+      tags:
+        - Users
+      x-roles:
+        - admin_super
       operationId: resetPassword
       summary: Reset ke INITIAL_PASSWORD dan wajib ganti pada login berikutnya
       description: Access dan refresh lama ditolak; reset tidak mengaktifkan akun nonaktif.
@@ -387,24 +599,39 @@ paths:
           application/json:
             schema:
               type: object
-              required: [confirmation]
+              required:
+                - confirmation
               properties:
-                confirmation: {type: string, enum: [RESET PASSWORD]}
+                confirmation:
+                  type: string
+                  enum:
+                    - RESET PASSWORD
       responses:
-        '200': {description: Password direset tanpa mengirim password di response}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          description: Password direset tanpa mengirim password di response
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/templates/{step}:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
       - name: step
         in: path
         required: true
-        schema: {type: integer, enum: [2, 3, 4]}
+        schema:
+          type: integer
+          enum:
+            - 2
+            - 3
+            - 4
     get:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: template
       summary: Unduh template XLSX terikat proyek, langkah dan version
       description: Langkah 3–4 memerlukan kebutuhan panelis lengkap. Kolom prefill diverifikasi kembali saat impor.
@@ -413,32 +640,53 @@ paths:
           description: Workbook XLSX
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema: {type: string, format: binary}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+              schema:
+                type: string
+                format: binary
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/imports/{step}:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
       - name: step
         in: path
         required: true
-        schema: {type: integer, enum: [2, 3, 4]}
+        schema:
+          type: integer
+          enum:
+            - 2
+            - 3
+            - 4
     post:
-      tags: [Projects]
-      x-roles: [admin_super]
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
       operationId: importWorkbook
       summary: Validasi atau terapkan workbook atomik tanpa perubahan parsial
-      description: Maksimal 5 MB dan 5000 baris; formula/macro/external links ditolak. valid=false mengembalikan semua error baris tanpa mutasi. apply=true memeriksa ulang lalu menyimpan transaksi.
+      description: >-
+        Maksimal 5 MB dan 5000 baris; formula/macro/external links ditolak. valid=false mengembalikan semua
+        error baris tanpa mutasi. apply=true memeriksa ulang lalu menyimpan transaksi.
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              required:
+                - file
               properties:
-                file: {type: string, format: binary}
-                apply: {type: string, enum: ['true', 'false'], default: 'false'}
+                file:
+                  type: string
+                  format: binary
+                apply:
+                  type: string
+                  enum:
+                    - 'true'
+                    - 'false'
+                  default: 'false'
       responses:
         '200':
           description: Preview atau hasil impor; periksa valid/applied
@@ -447,22 +695,31 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: {$ref: '#/components/schemas/ImportPreview'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                  data:
+                    $ref: '#/components/schemas/ImportPreview'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/monitoring/all:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
     get:
-      tags: [Monitoring]
-      x-roles: [admin_super]
+      tags:
+        - Monitoring
+      x-roles:
+        - admin_super
       operationId: monitoringAll
       summary: Snapshot monitoring seluruh mapel dan roster aktif
       parameters:
         - name: round
           in: query
-          schema: {type: integer, minimum: 0, default: 0}
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
           description: 0 memilih terakhir tiap mapel. Putaran belum ada menghasilkan unavailable pada mapel itu.
       responses:
         '200':
@@ -475,34 +732,51 @@ paths:
                   data:
                     type: object
                     properties:
-                      project: {$ref: '#/components/schemas/Project'}
-                      subjects: {type: array, items: {$ref: '#/components/schemas/Monitoring'}}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                      project:
+                        $ref: '#/components/schemas/Project'
+                      subjects:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Monitoring'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /users:
     get:
-      tags: [Users]
-      x-roles: [admin_super]
+      tags:
+        - Users
+      x-roles:
+        - admin_super
       operationId: listUsers
       summary: Daftar akun, opsional filter proyek
-      description: Halaman akun memuat semua lalu memfilter lokal; wizard edit menggunakan projectId. Urutan createdAt descending.
+      description: >-
+        Halaman akun memuat semua lalu memfilter lokal; wizard edit menggunakan projectId. Urutan createdAt
+        descending.
       parameters:
-        - {$ref: '#/components/parameters/ProjectQuery'}
+        - $ref: '#/components/parameters/ProjectQuery'
       responses:
-        '200': {$ref: '#/components/responses/UsersResponse'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/UsersResponse'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /items:
     get:
-      tags: [Items]
-      x-roles: [admin_super]
+      tags:
+        - Items
+      x-roles:
+        - admin_super
       operationId: listItems
       summary: Bank butir dengan filter opsional
-      description: Drawer FE mengirim subjectCode dan onlyAvailable=false lalu menerapkan toggle selectable lokal. Query true di BE hanya usageStatus available. Urutan id ascending.
+      description: >-
+        Drawer FE mengirim subjectCode dan onlyAvailable=false lalu menerapkan toggle selectable lokal. Query
+        true di BE hanya usageStatus available. Urutan id ascending.
       parameters:
-        - {$ref: '#/components/parameters/SubjectQuery'}
-        - {$ref: '#/components/parameters/ProjectQuery'}
+        - $ref: '#/components/parameters/SubjectQuery'
+        - $ref: '#/components/parameters/ProjectQuery'
         - name: onlyAvailable
           in: query
-          schema: {type: boolean, default: false}
+          schema:
+            type: boolean
+            default: false
           description: true hanya mengambil available, tidak termasuk allocated milik proyek ini
       responses:
         '200':
@@ -511,14 +785,20 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
                     properties:
-                      data: {type: array, items: {$ref: '#/components/schemas/Item'}}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Item'
+        default:
+          $ref: '#/components/responses/ProtectedError'
     post:
-      tags: [Items]
-      x-roles: [admin_super]
+      tags:
+        - Items
+      x-roles:
+        - admin_super
       operationId: saveItems
       summary: Create atau update metadata butir available
       description: |
@@ -531,9 +811,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [items]
+              required:
+                - items
               properties:
-                items: {type: array, items: {$ref: '#/components/schemas/Item'}}
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Item'
       responses:
         '200':
           description: Array request items; timestamp/default yang diisi service bisa terlihat melalui backing slice
@@ -541,26 +825,39 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
                     properties:
-                      data: {type: array, items: {$ref: '#/components/schemas/Item'}}
-        '409': {$ref: '#/components/responses/Conflict'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Item'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /items/{id}/result:
     parameters:
       - name: id
         in: path
         required: true
-        schema: {type: string, example: MAT-001}
+        schema:
+          type: string
+          example: MAT-001
         description: ID butir dari row Bank ID Butir
     get:
-      tags: [Items]
-      x-roles: [admin_super]
+      tags:
+        - Items
+      x-roles:
+        - admin_super
       operationId: itemResult
       summary: Statistik dan respons butir tested
-      description: Membaca snapshot statistik putaran final dan hanya respons putaran tersebut. Cutoff sama dengan mean, SD populasi, panelistCount panelis unik. Data tested lama tanpa snapshot menghasilkan statistics null, responses kosong dan warning; tidak menghitung angka buatan.
+      description: >-
+        Membaca snapshot statistik putaran final dan hanya respons putaran tersebut. Cutoff sama dengan mean,
+        SD populasi, panelistCount panelis unik. Data tested lama tanpa snapshot menghasilkan statistics null,
+        responses kosong dan warning; tidak menghitung angka buatan.
       responses:
         '200':
           description: ItemResultDetail
@@ -568,26 +865,40 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
                     properties:
                       data:
                         type: object
                         properties:
-                          item: {$ref: '#/components/schemas/Item'}
-                          statistics: {type: object, nullable: true, allOf: [{$ref: '#/components/schemas/ItemResult'}]}
-                          warning: {type: string, description: Informasi snapshot legacy tidak tersedia}
-                          responses: {type: array, items: {$ref: '#/components/schemas/Submission'}}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                          item:
+                            $ref: '#/components/schemas/Item'
+                          statistics:
+                            type: object
+                            nullable: true
+                            allOf:
+                              - $ref: '#/components/schemas/ItemResult'
+                          warning:
+                            type: string
+                            description: Informasi snapshot legacy tidak tersedia
+                          responses:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Submission'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /items/{id}:
     get:
-      tags: [Items]
-      x-roles: [admin_super]
+      tags:
+        - Items
+      x-roles:
+        - admin_super
       operationId: itemDetail
       summary: Metadata butir available, allocated atau tested
       parameters:
-        - {$ref: '#/components/parameters/ProjectId'}
+        - $ref: '#/components/parameters/ProjectId'
       responses:
         '200':
           description: Metadata item
@@ -595,54 +906,78 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
-                    properties: {data: {$ref: '#/components/schemas/Item'}}
-        '404': {$ref: '#/components/responses/NotFound'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Item'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/panelists/{panelistId}/submissions:
     get:
-      tags: [Monitoring]
-      x-roles: [admin_super]
+      tags:
+        - Monitoring
+      x-roles:
+        - admin_super
       operationId: adminPreviewPanelist
       summary: Preview respons panelis pada proyek/mapel/putaran dipilih
       parameters:
-        - {$ref: '#/components/parameters/ProjectId'}
+        - $ref: '#/components/parameters/ProjectId'
         - name: panelistId
           in: path
           required: true
-          schema: {type: string}
+          schema:
+            type: string
         - name: subjectCode
           in: query
           required: true
-          schema: {type: string}
+          schema:
+            type: string
         - name: round
           in: query
-          schema: {type: integer, minimum: 1, default: 1}
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
       responses:
-        '200': {$ref: '#/components/responses/SubmissionsResponse'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/SubmissionsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /projects/{id}/monitoring:
     parameters:
-      - {$ref: '#/components/parameters/ProjectId'}
+      - $ref: '#/components/parameters/ProjectId'
     get:
-      tags: [Monitoring]
-      x-roles: [admin_super]
+      tags:
+        - Monitoring
+      x-roles:
+        - admin_super
       operationId: adminMonitoring
       summary: Monitoring per proyek dan mapel
-      description: FE query halaman subject dipetakan ke subjectCode API. Polling 10 detik. Service ensureRound dapat membuat round jika tidak ada active round.
+      description: >-
+        FE query halaman subject dipetakan ke subjectCode API. Polling 10 detik. Service ensureRound dapat
+        membuat round jika tidak ada active round.
       parameters:
-        - {$ref: '#/components/parameters/SubjectQuery'}
+        - $ref: '#/components/parameters/SubjectQuery'
       responses:
-        '200': {$ref: '#/components/responses/MonitoringResponse'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/MonitoringResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /pic/monitoring:
     get:
-      tags: [Monitoring]
-      x-roles: [pic_mapel]
+      tags:
+        - Monitoring
+      x-roles:
+        - pic_mapel
       operationId: picMonitoring
       summary: Monitoring PIC dari scope JWT
       description: |
@@ -650,63 +985,101 @@ paths:
         Override query hanya diterima jika sama dengan penugasan; scope lain 403.
         FE polling 10 detik dan menampilkan kegagalan tanpa data demo.
       parameters:
-        - {$ref: '#/components/parameters/ProjectQuery'}
-        - {$ref: '#/components/parameters/SubjectQuery'}
+        - $ref: '#/components/parameters/ProjectQuery'
+        - $ref: '#/components/parameters/SubjectQuery'
       responses:
-        '200': {$ref: '#/components/responses/MonitoringResponse'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/MonitoringResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /pic/panelists/{panelistId}/submissions:
     get:
-      tags: [Monitoring]
-      x-roles: [pic_mapel]
+      tags:
+        - Monitoring
+      x-roles:
+        - pic_mapel
       operationId: previewPanelist
       summary: Respons read-only panelis pada suatu putaran
-      description: Scope project/mapel dari akun PIC; panelistId dari row. Panelis wajib ditugaskan pada scope tersebut. Admin memakai endpoint preview khusus admin.
+      description: >-
+        Scope project/mapel dari akun PIC; panelistId dari row. Panelis wajib ditugaskan pada scope tersebut.
+        Admin memakai endpoint preview khusus admin.
       parameters:
         - name: panelistId
           in: path
           required: true
-          schema: {type: string}
+          schema:
+            type: string
         - name: round
           in: query
-          schema: {type: integer, default: 1}
+          schema:
+            type: integer
+            default: 1
           description: Nomor putaran dari data.round.number; nol, negatif dan noninteger ditolak 422
       responses:
-        '200': {$ref: '#/components/responses/SubmissionsResponse'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+        '200':
+          $ref: '#/components/responses/SubmissionsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /pic/rounds/{action}:
     post:
-      tags: [Rounds]
-      x-roles: [pic_mapel]
+      tags:
+        - Rounds
+      x-roles:
+        - pic_mapel
       operationId: roundAction
       summary: Finalisasi atau rollback putaran aktif
-      description: |
+      description: |-
         Dua tahap konfirmasi di FE, satu request eksekusi di BE. Scope dari JWT.
         finalize membuat n+1 active setelah n finalized. rollback mengaktifkan n-1
         setelah n rolled_back; n=1 ditolak. Finalisasi wajib semua panelis/item lengkap.
         RoundNumber harus sama dengan putaran aktif untuk mencegah aksi stale.
         Round yang sudah ada diaktifkan kembali tanpa duplikasi nomor/ID.
+         Kirim roundRevision saat ini; omission hanya kompatibel pada revisi1. Rollback menaikkan revisi yang dibuka kembali dan respons harus ditinjau ulang. Snapshot final immutable; finalisasi ulang menambah arsip revisi baru.
       parameters:
         - name: action
           in: path
           required: true
-          schema: {type: string, enum: [finalize, rollback]}
+          schema:
+            type: string
+            enum:
+              - finalize
+              - rollback
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [confirmation, roundNumber]
+              required:
+                - confirmation
+                - roundNumber
               properties:
-                roundNumber: {type: integer, minimum: 1}
-                confirmation: {type: string, enum: [FINALISASI PUTARAN, ROLLBACK PUTARAN]}
+                roundNumber:
+                  type: integer
+                  minimum: 1
+                confirmation:
+                  type: string
+                  enum:
+                    - FINALISASI PUTARAN
+                    - ROLLBACK PUTARAN
+                roundRevision:
+                  type: integer
+                  minimum: 1
             examples:
-              finalize: {value: {confirmation: FINALISASI PUTARAN, roundNumber: 1}}
-              rollback: {value: {confirmation: ROLLBACK PUTARAN, roundNumber: 2}}
+              finalize:
+                value:
+                  confirmation: FINALISASI PUTARAN
+                  roundNumber: 1
+              rollback:
+                value:
+                  confirmation: ROLLBACK PUTARAN
+                  roundNumber: 2
       responses:
         '200':
           description: Round baru aktif atau round sebelumnya yang diaktifkan kembali
@@ -714,79 +1087,77 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
-                    properties: {data: {$ref: '#/components/schemas/Round'}}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Round'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /panelist/form:
     get:
-      tags: [Panelist]
-      x-roles: [panelis]
+      tags:
+        - Panelist
+      x-roles:
+        - panelis
       operationId: panelistForm
       summary: Borang putaran aktif user
-      description: |
+      description: |-
         Tanpa params/body; userId/projectId/subjectCode dari JWT. Submissions hanya
         user dan round aktif; proyek selesai menampilkan putaran final readOnly.
         PreviousRound dan previousSubmissions memuat respons putaran finalized sebelumnya.
         Draft ditolak tanpa membuat round. FE polling setiap 10 detik.
+         Gate kontak diperiksa server. Di luar periode atau saat dikecualikan dari round, form readOnly dengan periodMessage. Feedback hanya snapshot final putaran sebelumnya; metadata round tidak memuat jawaban peserta lain.
       responses:
         '200':
-          description: Form dan metadata scope
+          description: Hasil operasi
           content:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
                     properties:
                       data:
-                        type: object
-                        properties:
-                          project: {$ref: '#/components/schemas/Project'}
-                          subject: {$ref: '#/components/schemas/ProjectSubject'}
-                          round: {$ref: '#/components/schemas/Round'}
-                          items: {type: array, items: {$ref: '#/components/schemas/Item'}}
-                          submissions: {type: array, items: {$ref: '#/components/schemas/Submission'}}
-                          history: {type: array, items: {$ref: '#/components/schemas/Round'}}
-                          previousRound: {type: integer, nullable: true}
-                          previousSubmissions: {type: array, items: {$ref: '#/components/schemas/Submission'}}
-                          readOnly: {type: boolean}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                        $ref: '#/components/schemas/PanelistForm'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '428':
+          $ref: '#/components/responses/ContactRequired'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /panelist/submissions/{itemId}:
     put:
-      tags: [Panelist]
-      x-roles: [panelis]
+      tags:
+        - Panelist
+      x-roles:
+        - panelis
       operationId: saveSubmission
       summary: Upsert jawaban satu butir pada round aktif
-      description: |
-        itemId dari row; roundNumber dari form.round.number; answer dari input.
-        Scope dan nama panelis dari JWT. FE debounce 700 ms. Validasi jawaban/scope/
-        readOnly/round aktif serta metadata questionType dan length distribution=maxScore+1.
-        Upsert mempertahankan ID existing; hanya response saved yang dikonfirmasi server.
-        Transaksi mengunci round terhadap finalisasi bersamaan.
+      description: >-
+        Simpan jawaban valid dan catatan pada scope user/round aktif. Periode start inklusif/end eksklusif,
+        gate kontak, penugasan, versi kandidat, versi respons dan roundRevision dicek server. Antrean
+        terlambat/stale ditolak. reviewed=true mengakui jawaban pada revisi rollback; hanya ACK server
+        menandai tersimpan.
       parameters:
         - name: itemId
           in: path
           required: true
-          schema: {type: string, example: MAT-001}
+          schema:
+            type: string
+            example: MAT-001
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [roundNumber, answer]
-              properties:
-                roundNumber: {type: integer}
-                answer: {$ref: '#/components/schemas/Answer'}
-            examples:
-              pg: {value: {roundNumber: 1, answer: {questionType: pilihan_ganda, value: 72}}}
-              pgKompleks: {value: {roundNumber: 1, answer: {questionType: pilihan_ganda_kompleks, distribution: [10, 20, 35, 35]}}}
-              essay: {value: {roundNumber: 1, answer: {questionType: essay, distribution: [5, 15, 25, 35, 20]}}}
+              $ref: '#/components/schemas/SubmissionInput'
       responses:
         '200':
           description: Submission tersimpan
@@ -794,376 +1165,2519 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - {$ref: '#/components/schemas/Success'}
+                  - $ref: '#/components/schemas/Success'
                   - type: object
-                    properties: {data: {$ref: '#/components/schemas/Submission'}}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '422': {$ref: '#/components/responses/Unprocessable'}
-        default: {$ref: '#/components/responses/ProtectedError'}
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Submission'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/PeriodClosed'
+        '428':
+          $ref: '#/components/responses/ContactRequired'
+        default:
+          $ref: '#/components/responses/ProtectedError'
+  /profile/contact:
+    get:
+      tags:
+        - Profile
+      x-roles:
+        - panelis
+      operationId: getContact
+      summary: Kontak profil panelis sendiri
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ContactView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: Dapat diakses setelah mengganti password, termasuk saat gate kontak belum dipenuhi.
+    put:
+      tags:
+        - Profile
+      x-roles:
+        - panelis
+      operationId: updateContact
+      summary: Simpan kontak dengan versi optimistik
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ContactView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactInput'
+  /projects/{id}/copy:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags:
+        - Projects
+      x-roles:
+        - admin_super
+      operationId: copyProject
+      summary: Salin struktur menjadi draft baru
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Menyalin pengaturan/mapel/definisi kandidat/nama personel, dengan sourceProjectId. Tidak menyalin
+        butir, akun/password, periode, kontak, respons, round atau hasil. Tinjau dan pilih ulang sebelum
+        aktivasi.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+              required:
+                - name
+  /pic/rounds/{id}/exclusions/{userId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: ID round aktif pada scope PIC.
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: ID panelis yang ditugaskan pada mapel PIC.
+    post:
+      tags:
+        - Rounds
+      x-roles:
+        - pic_mapel
+      operationId: excludePanelist
+      summary: Keluarkan panelis hanya dari round aktif
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          updated:
+                            type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Akun dan jawaban dipertahankan. Hanya PIC yang ditugaskan/current active round; revisi harus cocok.
+        Audit menyertai perubahan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roundRevision:
+                  type: integer
+                  minimum: 1
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                confirmation:
+                  type: string
+                  enum:
+                    - KELUARKAN PANELIS
+              required:
+                - roundRevision
+                - reason
+                - confirmation
+    delete:
+      tags:
+        - Rounds
+      x-roles:
+        - pic_mapel
+      operationId: includePanelist
+      summary: Batalkan pengecualian round aktif
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          updated:
+                            type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Akun dan jawaban dipertahankan. Hanya PIC yang ditugaskan/current active round; revisi harus cocok.
+        Audit menyertai perubahan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roundRevision:
+                  type: integer
+                  minimum: 1
+              required:
+                - roundRevision
+  /pic/discussion/{itemId}:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Monitoring
+      x-roles:
+        - pic_mapel
+      operationId: discussion
+      summary: Ringkasan distribusi butir anonim
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Discussion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      parameters:
+        - name: round
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 0 memilih snapshot final terbaru pada scope PIC.
+      description: >-
+        Hanya snapshot finalized; n<3 menyembunyikan nilai individual. Tidak ada nama, kontak, catatan atau
+        marker diri.
+  /panelist/feedback:
+    get:
+      tags:
+        - Panelist
+      x-roles:
+        - panelis
+      operationId: panelistFeedback
+      summary: Umpan balik putaran sebelumnya
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ItemFeedback'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/ContactRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Hasil yang sama dengan form.feedback, dibatasi user/mapel sendiri. Putaran pertama dapat menghasilkan
+        array kosong.
+  /panelist/submissions/{itemId}/review:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Panelist
+      x-roles:
+        - panelis
+      operationId: reviewSubmission
+      summary: Akui jawaban existing pada revisi saat ini
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Submission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/PeriodClosed'
+        '428':
+          $ref: '#/components/responses/ContactRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewInput'
+      description: >-
+        Mengakui jawaban valid yang sudah ada, termasuk setelah rollback; jawaban/catatan dipertahankan.
+        Memakai periode/gate kontak/versi yang sama dengan simpan. Kirim candidateVersion dari subject;
+        featureVersion1 menolak versi kandidat yang hilang/stale.
+  /projects/{id}/reports:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Reports
+      x-roles:
+        - admin_super
+      operationId: projectReport
+      summary: Laporan snapshot final per mapel
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ProjectReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      parameters:
+        - name: round
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 0 memilih putaran final terbaru.
+        - name: revision
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 0 memilih snapshot final saat ini. Revisi arsip >0 memerlukan round >0.
+      description: >-
+        Pilih round/revision arsip untuk inspeksi hasil historis immutable. Data legacy tanpa snapshot diberi
+        warning; tidak diklaim memiliki provenance roster lengkap. Manifest ada dalam payload.
+  /projects/{id}/exports:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Reports
+      x-roles:
+        - admin_super
+      operationId: exportReport
+      summary: Unduh raw atau summary dari snapshot final
+      responses:
+        '200':
+          description: Unduhan UTF-8 CSV dengan BOM dan CRLF; Content-Disposition attachment dan Cache-Control no-store.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      parameters:
+        - name: round
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 0 memilih putaran final terbaru.
+        - name: revision
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 0 memilih snapshot final saat ini. Revisi arsip >0 memerlukan round >0.
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum:
+              - id
+              - standard
+            default: id
+          description: id memakai pemisah titik koma/desimal koma; standard memakai koma/desimal titik.
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum:
+              - raw
+              - summary
+            default: summary
+      description: >-
+        Raw satu baris panelis×butir×round, termasuk flag included/reviewed/missing dan distributionJSON.
+        Summary agregat. Kontak, password, hash, token dan catatan tidak masuk CSV umum.
+        Versi/schema/snapshot/round/revision/generatedAt tersedia sebagai provenance; legacy diberi label
+        eksplisit. Raw menambahkan rosterComplete, activeAtSnapshot, removedAtSnapshot, exclusionReason;
+        status historis kosong bila roster lengkap tidak tersedia.
+  /projects/{id}/impact/template:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Impact
+      x-roles:
+        - admin_super
+      operationId: impactTemplate
+      summary: Unduh template skor dampak terikat snapshot
+      responses:
+        '200':
+          description: Workbook XLSX, Content-Disposition attachment.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Memerlukan snapshot final. Sheet tepat Data dan _binding. Kolom Data: peserta_id, mata_pelajaran,
+        skor, skala, maksimum. peserta_id pseudonim unik per mapel; skala persen wajib maksimum100; skala
+        mentah dinormalisasi skor/maksimum×100. Jangan mengubah binding.
+  /projects/{id}/impact/preview:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags:
+        - Impact
+      x-roles:
+        - admin_super
+      operationId: impactPreview
+      summary: Validasi skor dampak tanpa mutasi
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ImpactPreview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        File .xlsx maksimal5MB/5000baris. Formula, macro, external links, kolom tambahan dan duplikat
+        peserta-mapel ditolak. Ambang lulus inklusif percentage>=operationalCutoff. Periksa valid dan errors
+        sebelum apply; invalid baris dapat kembali HTTP200 dengan valid=false.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+                - file
+  /projects/{id}/impact/apply:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags:
+        - Impact
+      x-roles:
+        - admin_super
+      operationId: impactApply
+      summary: Terapkan seluruh skor dampak dalam transaksi
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ImpactBatch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        File .xlsx maksimal5MB/5000baris. Formula, macro, external links, kolom tambahan dan duplikat
+        peserta-mapel ditolak. Ambang lulus inklusif percentage>=operationalCutoff. Wajib file identik dan
+        binding JSON dari preview; scope/version/snapshot/hash diverifikasi ulang. Tidak ada perubahan
+        parsial.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                binding:
+                  type: string
+                  description: JSON.stringify nilai binding yang dikembalikan preview; struktur ImpactBinding.
+              required:
+                - file
+                - binding
+  /projects/{id}/impact:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Impact
+      x-roles:
+        - admin_super
+      operationId: impactResults
+      summary: Daftar batch dan ringkasan dampak
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ImpactBatch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Hasil terikat cutoffSnapshotId. stale pada agregat menandai versi/snapshot yang tidak lagi menjadi
+        hasil terkini; batch historis dipertahankan.
+  /panelist/evaluation:
+    get:
+      tags:
+        - Evaluation
+      x-roles:
+        - panelis
+      operationId: getEvaluation
+      summary: Baca evaluasi sendiri dan label instrumen
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EvaluationView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Panelis aktif yang ditugaskan pada proyek active/completed; tidak memerlukan kontak dan tidak
+        memengaruhi simpan nilai.
+    put:
+      tags:
+        - Evaluation
+      x-roles:
+        - panelis
+      operationId: putEvaluation
+      summary: Simpan evaluasi instrumen1
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Evaluation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      description: >-
+        Tiga skor1–5 dan komentar opsional. Boleh setelah proyek completed sampai evaluationClosed=true;
+        role/penugasan tetap berlaku. Version optimistik; closed/validasi422 dan versi stale409. Tidak
+        diblokir gate kontak/periode scoring.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationInput'
+  /projects/{id}/evaluations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Evaluation
+      x-roles:
+        - admin_super
+      operationId: evaluationSummary
+      summary: Agregat evaluasi tanpa identitas
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EvaluationAggregate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+  /projects/{id}/evaluations/export:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Evaluation
+      x-roles:
+        - admin_super
+      operationId: evaluationExport
+      summary: Unduh agregat evaluasi CSV
+      responses:
+        '200':
+          description: Unduhan UTF-8 CSV dengan BOM dan CRLF; Content-Disposition attachment dan Cache-Control no-store.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum:
+              - id
+              - standard
+            default: id
+          description: id memakai pemisah titik koma/desimal koma; standard memakai koma/desimal titik.
+      description: Hanya agregat konstruk. Tidak mengekspor komentar atau identitas; suppress agregat rinci n<3.
+  /audit-events:
+    get:
+      tags:
+        - Audit
+      x-roles:
+        - admin_super
+      operationId: auditEvents
+      summary: Riwayat aktivitas terbaru
+      responses:
+        '200':
+          description: Hasil operasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AuditEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/PasswordRequired'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Pencarian literal actor/target/requestId dan nama/username saat ini.
+        - name: action
+          in: query
+          schema:
+            type: string
+      description: >-
+        Maksimal1000 event terbaru, urut createdAt descending. Filter project/action tetap berlaku saat
+        pencarian nama. Retensi diatur operasi; tidak ada TTL penghapusan otomatis.
 components:
   securitySchemes:
-    BearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   parameters:
     ProjectId:
       name: id
       in: path
       required: true
-      schema: {type: string, example: project_contoh}
+      schema:
+        type: string
+        example: project_contoh
       description: Project.id dari response/list row, bukan code atau nama
     ProjectQuery:
       name: projectId
       in: query
-      schema: {type: string}
+      schema:
+        type: string
       description: Opsional; id proyek untuk filter, atau override scope pada PIC monitoring
     SubjectQuery:
       name: subjectCode
       in: query
-      schema: {type: string, example: MAT}
+      schema:
+        type: string
+        example: MAT
       description: Kode mapel; wajib secara bisnis untuk monitoring meski handler menerima query kosong
   requestBodies:
     ProjectBody:
       required: true
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/Project'}
+          schema:
+            $ref: '#/components/schemas/Project'
           example:
             name: Standard Setting 2026
-            startDate: '2026-10-12T00:00:00Z'
-            endDate: '2026-10-31T23:59:59Z'
+            startDate: '2026-10-11T17:00:00Z'
+            endDate: '2026-10-31T17:00:00Z'
             status: draft
             wizardStep: 1
             subjects: []
             accountsGenerated: false
+            collectContactPanelis: false
+            roundingPolicy: ceil_1pp
   responses:
     Error:
       description: Error handler umum; status sesuai operasi atau 500 dari kegagalan service/store
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     ProtectedError:
-      description: '401 Bearer invalid, 403 role, 428 first-login, 500 store/service, atau 503 service nil. Kode lain dapat datang dari handler/error handler.'
+      description: >-
+        401 sesi invalid; 403 role/scope; 428 password wajib diganti atau CONTACT_REQUIRED pada scoring; 409
+        REVISION_CONFLICT; 422 validasi/PERIOD_CLOSED; 500 kegagalan service/store; 503 layanan tidak
+        tersedia. Lihat respons spesifik operasi.
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     Unauthorized:
       description: Credential/session/Bearer ditolak
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     Forbidden:
-      description: 'Role ditolak. KI-01 saat ini memblokir PIC/Panelis valid.'
+      description: Role tidak diizinkan atau scope proyek/mapel di luar penugasan aktif.
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     PasswordRequired:
       description: Akun aktif masih wajib mengganti password
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     Unprocessable:
       description: Payload/validasi tidak sesuai
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     Conflict:
-      description: Konfirmasi/status/alokasi/store/aksi tidak dapat diproses
+      description: Konfirmasi/status/alokasi/versi/aksi tidak dapat diproses; beberapa handler memakai REVISION_CONFLICT.
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     NotFound:
       description: Handler monitoring/form memetakan service error menjadi 404
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     AuthResponse:
       description: Session baru; password hash tidak ditampilkan
       content:
         application/json:
           schema:
             allOf:
-              - {$ref: '#/components/schemas/Success'}
+              - $ref: '#/components/schemas/Success'
               - type: object
-                properties: {data: {$ref: '#/components/schemas/AuthResult'}}
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthResult'
     ProjectResponse:
       description: Dokumen Project lengkap
       content:
         application/json:
           schema:
             allOf:
-              - {$ref: '#/components/schemas/Success'}
+              - $ref: '#/components/schemas/Success'
               - type: object
-                properties: {data: {$ref: '#/components/schemas/Project'}}
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Project'
     UsersResponse:
       description: Array user tanpa passwordHash; kosong berupa []
       content:
         application/json:
           schema:
             allOf:
-              - {$ref: '#/components/schemas/Success'}
+              - $ref: '#/components/schemas/Success'
               - type: object
                 properties:
-                  data: {type: array, items: {$ref: '#/components/schemas/User'}}
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
     MonitoringResponse:
-      description: Scope, item dan progres putaran aktif/final; statistik hanya ketika semua respons lengkap. ICC tidak dihitung.
+      description: >-
+        Scope, item dan progres putaran aktif/final; statistik hanya ketika semua respons lengkap. ICC tidak
+        dihitung.
       content:
         application/json:
           schema:
             allOf:
-              - {$ref: '#/components/schemas/Success'}
+              - $ref: '#/components/schemas/Success'
               - type: object
-                properties: {data: {$ref: '#/components/schemas/Monitoring'}}
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Monitoring'
     SubmissionsResponse:
       description: Array Submission; kosong berupa []
       content:
         application/json:
           schema:
             allOf:
-              - {$ref: '#/components/schemas/Success'}
+              - $ref: '#/components/schemas/Success'
               - type: object
                 properties:
-                  data: {type: array, items: {$ref: '#/components/schemas/Submission'}}
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Submission'
+    ContactRequired:
+      description: >-
+        Akun masih wajib mengganti password, atau CONTACT_REQUIRED: lengkapi kontak profil sesuai kebijakan
+        proyek sebelum borang/feedback/simpan/review.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            status: error
+            message: Lengkapi kontak profil sesuai kebijakan proyek sebelum borang/feedback/simpan/review.
+            code: CONTACT_REQUIRED
+    RevisionConflict:
+      description: >-
+        Revisi putaran, versi respons/kontak atau definisi kandidat berubah. Muat ulang dan tinjau; jangan
+        overwrite otomatis.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            status: error
+            message: >-
+              Revisi putaran, versi respons/kontak atau definisi kandidat berubah. Muat ulang dan tinjau;
+              jangan overwrite otomatis.
+            code: REVISION_CONFLICT
+    PeriodClosed:
+      description: >-
+        Validasi jawaban/payload ditolak, atau PERIOD_CLOSED: penilaian sebelum startDate atau pada/sesudah
+        endDate; antrean offline tetap ditolak.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            status: error
+            message: Penilaian berada sebelum startDate atau pada/sesudah endDate; antrean offline tetap ditolak.
+            code: PERIOD_CLOSED
+    SecurityUnavailable:
+      description: Kontrol keamanan/session Redis atau layanan yang diperlukan tidak tersedia; tanpa bypass.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: Blokir sementara percobaan login; coba lagi setelah Retry-After detik.
+      headers:
+        Retry-After:
+          description: Jumlah detik sampai percobaan berikutnya; pembulatan ke atas, minimal 1.
+          schema:
+            type: string
+            pattern: ^[1-9][0-9]*$
+            example: '900'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
     Success:
       type: object
-      required: [status, data]
+      required:
+        - status
+        - data
       properties:
-        status: {type: string, enum: [success]}
+        status:
+          type: string
+          enum:
+            - success
     ErrorEnvelope:
       type: object
-      required: [status, message]
+      required:
+        - status
+        - message
       properties:
-        status: {type: string, enum: [error]}
-        message: {type: string}
-        errors: {type: array, items: {type: string}, description: Hanya activation checklist response}
+        status:
+          type: string
+          enum:
+            - error
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: string
+          description: Hanya activation checklist response
+        code:
+          type: string
+          description: >-
+            Kode terstruktur bila tersedia: CONTACT_REQUIRED (428), REVISION_CONFLICT (409), PERIOD_CLOSED
+            (422). Error umum dapat tidak menyertakan kode atau memakai string kosong.
     LoginRequest:
       type: object
-      required: [username, password]
+      required:
+        - username
+        - password
       properties:
-        username: {type: string, minLength: 1}
-        password: {type: string, minLength: 1}
-    Role: {type: string, enum: [admin_super, pic_mapel, panelis]}
-    QuestionType: {type: string, enum: [pilihan_ganda, pilihan_ganda_kompleks, essay]}
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+    Role:
+      type: string
+      enum:
+        - admin_super
+        - pic_mapel
+        - panelis
+    QuestionType:
+      type: string
+      enum:
+        - pilihan_ganda
+        - pilihan_ganda_kompleks
+        - essay
     UserView:
       type: object
       properties:
-        id: {type: string}
-        username: {type: string}
-        name: {type: string}
-        role: {$ref: '#/components/schemas/Role'}
-        projectId: {type: string}
-        projectName: {type: string}
-        subjectCode: {type: string}
-        mustChangePassword: {type: boolean}
+        id:
+          type: string
+        username:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        projectId:
+          type: string
+        projectName:
+          type: string
+        subjectCode:
+          type: string
+        mustChangePassword:
+          type: boolean
+        contactRequired:
+          type: boolean
+      description: >-
+        Tampilan user untuk routing sesi. contactRequired dihitung dari kebijakan/kontak terkini, bukan klaim
+        JWT.
     User:
       allOf:
-        - {$ref: '#/components/schemas/UserView'}
+        - $ref: '#/components/schemas/UserView'
         - type: object
           properties:
-            active: {type: boolean}
-            removed: {type: boolean}
-            slotId: {type: string}
-            lastLoginAt: {type: string, format: date-time, description: Diisi pada login berhasil}
-            createdAt: {type: string, format: date-time}
-            updatedAt: {type: string, format: date-time}
+            active:
+              type: boolean
+            removed:
+              type: boolean
+            slotId:
+              type: string
+            lastLoginAt:
+              type: string
+              format: date-time
+              description: Diisi pada login berhasil
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
     AuthResult:
       type: object
       properties:
-        accessToken: {type: string}
-        refreshToken: {type: string}
-        expiresIn: {type: integer, example: 900}
-        user: {$ref: '#/components/schemas/UserView'}
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          example: 900
+        user:
+          $ref: '#/components/schemas/UserView'
     Claims:
       type: object
       properties:
-        name: {type: string}
-        username: {type: string}
-        role: {$ref: '#/components/schemas/Role'}
-        projectId: {type: string}
-        subjectCode: {type: string}
-        mustChangePassword: {type: boolean}
-        sub: {type: string, description: User ID}
-        iss: {type: string, example: standard-setting}
-        iat: {type: integer, format: int64}
-        exp: {type: integer, format: int64}
-        nbf: {type: integer, format: int64}
-        aud: {type: array, items: {type: string}}
-        jti: {type: string}
+        name:
+          type: string
+        username:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        projectId:
+          type: string
+        subjectCode:
+          type: string
+        mustChangePassword:
+          type: boolean
+        sub:
+          type: string
+          description: User ID
+        iss:
+          type: string
+          example: standard-setting
+        iat:
+          type: integer
+          format: int64
+        exp:
+          type: integer
+          format: int64
+        nbf:
+          type: integer
+          format: int64
+        aud:
+          type: array
+          items:
+            type: string
+        jti:
+          type: string
     Project:
       type: object
-      description: Model body dan response. Pada create Draft sebagian field boleh belum diisi; tidak ada required list umum agar tidak mengklaim validasi yang belum ada.
+      description: >-
+        Model body dan response. Pada create Draft sebagian field boleh belum diisi; tidak ada required list
+        umum agar tidak mengklaim validasi yang belum ada.
       properties:
-        id: {type: string}
-        version: {type: integer, minimum: 0}
-        itemsEditable: {type: boolean, readOnly: true}
-        code: {type: string}
-        name: {type: string}
-        description: {type: string}
-        startDate: {type: string, format: date-time, nullable: true}
-        endDate: {type: string, format: date-time, nullable: true}
-        status: {type: string, enum: [draft, active, completed]}
-        wizardStep: {type: integer}
-        subjects: {type: array, items: {$ref: '#/components/schemas/ProjectSubject'}}
-        accountsGenerated: {type: boolean}
-        createdBy: {type: string}
-        completedAt: {type: string, format: date-time}
-        createdAt: {type: string, format: date-time}
-        updatedAt: {type: string, format: date-time}
+        id:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+        itemsEditable:
+          type: boolean
+          readOnly: true
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            UTC instant; input tanggal Asia/Jakarta dimulai00.00 inklusif. Tanggal legacy dipertahankan sampai
+            admin mengedit.
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            UTC instant eksklusif; input tanggal selesai dikodekan00.00 WIB hari sesudah tanggal itu. Simpan
+            sebelum mulai/pada atau setelah akhir ditolak.
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+            - completed
+        wizardStep:
+          type: integer
+        subjects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectSubject'
+        accountsGenerated:
+          type: boolean
+        createdBy:
+          type: string
+        completedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        featureVersion:
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: 0 legacy; proyek baru menggunakan fitur versi1.
+        collectContactPanelis:
+          type: boolean
+        roundingPolicy:
+          type: string
+          enum:
+            - none
+            - ceil_1pp
+            - nearest_1pp
+          description: Proyek baru default ceil_1pp; migrasi legacy none.
+        sourceProjectId:
+          type: string
+          readOnly: true
+        evaluationClosed:
+          type: boolean
     ProjectSubject:
       type: object
       properties:
-        code: {type: string, example: MAT}
-        name: {type: string, example: Matematika}
-        itemIds: {type: array, items: {type: string}}
-        picUserId: {type: string}
-        picName: {type: string}
-        panelistCount: {type: integer}
-        panelistUserIds: {type: array, items: {type: string}}
-        panelistNames: {type: array, items: {type: string}}
-        slots: {type: array, items: {$ref: '#/components/schemas/PersonnelSlot'}}
+        code:
+          type: string
+          example: MAT
+        name:
+          type: string
+          example: Matematika
+        itemIds:
+          type: array
+          items:
+            type: string
+        picUserId:
+          type: string
+        picName:
+          type: string
+        panelistCount:
+          type: integer
+        panelistUserIds:
+          type: array
+          items:
+            type: string
+        panelistNames:
+          type: array
+          items:
+            type: string
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonnelSlot'
+        candidateDefinition:
+          type: string
+          description: Definisi kandidat per mapel; wajib sebelum aktivasi proyek baru.
+        candidateVersion:
+          type: integer
+          minimum: 0
+          readOnly: true
+        candidateHistory:
+          type: array
+          readOnly: true
+          items:
+            $ref: '#/components/schemas/CandidateDefinitionRevision'
     Item:
       type: object
       properties:
-        id: {type: string, example: MAT-001}
-        subjectCode: {type: string}
-        subjectName: {type: string}
-        questionType: {$ref: '#/components/schemas/QuestionType'}
-        maxScore: {type: integer}
-        rubric: {type: array, items: {type: string}}
-        usageStatus: {type: string, enum: [available, allocated, tested]}
-        projectId: {type: string}
-        projectName: {type: string}
+        id:
+          type: string
+          example: MAT-001
+        subjectCode:
+          type: string
+        subjectName:
+          type: string
+        questionType:
+          $ref: '#/components/schemas/QuestionType'
+        maxScore:
+          type: integer
+        rubric:
+          type: array
+          items:
+            type: string
+        usageStatus:
+          type: string
+          enum:
+            - available
+            - allocated
+            - tested
+        projectId:
+          type: string
+        projectName:
+          type: string
         projectHistory:
           type: array
           items:
             type: object
             properties:
-              projectId: {type: string}
-              projectName: {type: string}
-        readOnly: {type: boolean}
-        finalResult: {$ref: '#/components/schemas/ItemResult'}
-        createdAt: {type: string, format: date-time}
-        updatedAt: {type: string, format: date-time}
+              projectId:
+                type: string
+              projectName:
+                type: string
+        readOnly:
+          type: boolean
+        finalResult:
+          $ref: '#/components/schemas/ItemResult'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     ItemResult:
       type: object
       properties:
-        panelistIds: {type: array, items: {type: string}, description: Identitas pembentuk snapshot final; tidak tersedia pada data historis lama}
-        cutoff: {type: number, format: double}
-        mean: {type: number, format: double}
-        median: {type: number, format: double}
-        standardDeviation: {type: number, format: double}
-        minimum: {type: number, format: double}
-        maximum: {type: number, format: double}
-        panelistCount: {type: integer, description: Jumlah panelis unik ditugaskan dengan respons lengkap}
-        roundNumber: {type: integer, minimum: 1}
-        completedAt: {type: string, format: date-time, description: Waktu snapshot final; zero time pada statistik monitoring live}
+        panelistIds:
+          type: array
+          items:
+            type: string
+          description: Identitas pembentuk snapshot final; tidak tersedia pada data historis lama
+        cutoff:
+          type: number
+          format: double
+        mean:
+          type: number
+          format: double
+        median:
+          type: number
+          format: double
+        standardDeviation:
+          type: number
+          format: double
+          description: SD populasi deskriptif; tetap dibedakan dari SD sampel.
+        minimum:
+          type: number
+          format: double
+        maximum:
+          type: number
+          format: double
+        panelistCount:
+          type: integer
+          description: Jumlah panelis unik ditugaskan dengan respons lengkap
+        roundNumber:
+          type: integer
+          minimum: 1
+        completedAt:
+          type: string
+          format: date-time
+          description: Waktu snapshot final; zero time pada statistik monitoring live
+        revision:
+          type: integer
+          minimum: 0
+        sampleStandardDeviation:
+          type: number
+          format: double
+          nullable: true
+          description: SD sampel; null bila n<2.
+        standardError:
+          type: number
+          format: double
+          nullable: true
+          description: SE dalam poin persentase, SD sampel/sqrt(n); null bila n<2.
+        operationalCutoff:
+          type: number
+          format: double
+          description: Cutoff setelah roundingPolicy, dipakai ambang lulus dampak inklusif.
+        roundingPolicy:
+          type: string
+          enum:
+            - none
+            - ceil_1pp
+            - nearest_1pp
     Round:
       type: object
       properties:
-        id: {type: string}
-        projectId: {type: string}
-        subjectCode: {type: string}
-        number: {type: integer}
-        status: {type: string, enum: [active, finalized, rolled_back, closed, unavailable]}
-        endsAt: {type: string, format: date-time}
-        finalizedAt: {type: string, format: date-time}
-        finalizedBy: {type: string}
-        createdAt: {type: string, format: date-time}
-        updatedAt: {type: string, format: date-time}
+        id:
+          type: string
+        projectId:
+          type: string
+        subjectCode:
+          type: string
+        number:
+          type: integer
+        status:
+          type: string
+          enum:
+            - active
+            - finalized
+            - rolled_back
+            - closed
+            - unavailable
+        endsAt:
+          type: string
+          format: date-time
+        finalizedAt:
+          type: string
+          format: date-time
+        finalizedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
+          description: Field legacy hilang dibaca sebagai1; rollback menaikkan revisi round yang dibuka kembali.
+        excludedPanelists:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoundExclusion'
+        finalSnapshot:
+          $ref: '#/components/schemas/RoundSnapshot'
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoundSnapshot'
+      description: >-
+        Metadata round umum. Borang panelis menyembunyikan finalSnapshot, snapshots dan detail
+        excludedPanelists; gunakan feedback anonim dan status readOnly.
     Answer:
       type: object
-      required: [questionType]
-      description: PG wajib value 0-100 dan tanpa distribution. PG Kompleks/Essay wajib distribution nonempty dengan total tepat 100; panjang tepat maxScore+1. QuestionType wajib sesuai metadata butir.
+      required:
+        - questionType
+      description: >-
+        PG wajib value 0-100 dan tanpa distribution. PG Kompleks/Essay wajib distribution nonempty dengan
+        total tepat 100; panjang tepat maxScore+1. QuestionType wajib sesuai metadata butir.
       properties:
-        questionType: {$ref: '#/components/schemas/QuestionType'}
-        value: {type: integer, minimum: 0, maximum: 100}
-        distribution: {type: array, items: {type: integer, minimum: 0, maximum: 100}}
+        questionType:
+          $ref: '#/components/schemas/QuestionType'
+        value:
+          type: integer
+          minimum: 0
+          maximum: 100
+        distribution:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 100
     Submission:
       type: object
       properties:
-        id: {type: string}
-        projectId: {type: string}
-        subjectCode: {type: string}
-        roundNumber: {type: integer}
-        panelistId: {type: string}
-        panelistName: {type: string}
-        itemId: {type: string}
-        answer: {$ref: '#/components/schemas/Answer'}
-        status: {type: string, example: saved}
-        updatedAt: {type: string, format: date-time}
+        id:
+          type: string
+        projectId:
+          type: string
+        subjectCode:
+          type: string
+        roundNumber:
+          type: integer
+        panelistId:
+          type: string
+        panelistName:
+          type: string
+        itemId:
+          type: string
+        answer:
+          $ref: '#/components/schemas/Answer'
+        status:
+          type: string
+          example: saved
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 0
+        roundRevision:
+          type: integer
+          minimum: 1
+        reviewRevision:
+          type: integer
+          minimum: 0
+          description: Revisi terakhir yang diakui eksplisit; legacy dianggap reviewed hanya revisi1.
+        candidateVersion:
+          type: integer
+          minimum: 0
+        note:
+          type: string
+          maxLength: 1000
+        idempotencyKey:
+          type: string
+          maxLength: 128
     MonitoringPanelist:
       type: object
       properties:
-        id: {type: string}
-        name: {type: string}
-        username: {type: string}
-        done: {type: integer}
-        total: {type: integer}
-        status: {type: string, enum: [Belum Menilai, Menilai, Selesai, Perlu Perhatian]}
-        lastActive: {type: string, format: date-time, nullable: true, description: Null jika belum ada respons}
+        id:
+          type: string
+        name:
+          type: string
+        username:
+          type: string
+        done:
+          type: integer
+        total:
+          type: integer
+        status:
+          type: string
+          enum:
+            - Belum Menilai
+            - Menilai
+            - Selesai
+            - Perlu Perhatian
+        lastActive:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null jika belum ada respons
+        whatsapp:
+          type: string
+        email:
+          type: string
+        contactValid:
+          type: boolean
+        needsReview:
+          type: integer
+          minimum: 0
     Monitoring:
       type: object
       properties:
-        project: {$ref: '#/components/schemas/Project'}
-        subject: {$ref: '#/components/schemas/ProjectSubject'}
-        round: {$ref: '#/components/schemas/Round'}
-        history: {type: array, items: {$ref: '#/components/schemas/Round'}}
-        panelists: {type: array, items: {$ref: '#/components/schemas/MonitoringPanelist'}}
-        items: {type: array, items: {$ref: '#/components/schemas/Item'}}
-        statistics: {type: object, nullable: true, allOf: [{$ref: '#/components/schemas/ItemResult'}]}
-        canFinalize: {type: boolean}
-        canRollback: {type: boolean}
-        totalDone: {type: integer, description: Akumulasi done seluruh panelis}
-        totalItems: {type: integer, description: 'Jumlah butir per mapel, bukan butir kali panelis'}
+        project:
+          $ref: '#/components/schemas/Project'
+        subject:
+          $ref: '#/components/schemas/ProjectSubject'
+        round:
+          $ref: '#/components/schemas/Round'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/Round'
+        panelists:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitoringPanelist'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        statistics:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ItemResult'
+        canFinalize:
+          type: boolean
+        canRollback:
+          type: boolean
+        totalDone:
+          type: integer
+          description: Akumulasi done seluruh panelis
+        totalItems:
+          type: integer
+          description: Jumlah butir per mapel, bukan butir kali panelis
+        excluded:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitoringExclusion'
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonitoringNote'
+      description: >-
+        Denominator operasional memakai roster efektif round dan review revision. Kontak/catatan terbatas
+        admin atau PIC pada scope; tidak masuk ekspor CSV umum.
     Subject:
       type: object
       properties:
-        code: {type: string}
-        name: {type: string}
-        total: {type: integer}
-        available: {type: integer}
-        allocated: {type: integer}
-        tested: {type: integer}
+        code:
+          type: string
+        name:
+          type: string
+        total:
+          type: integer
+        available:
+          type: integer
+        allocated:
+          type: integer
+        tested:
+          type: integer
     PersonnelSlot:
       type: object
       properties:
-        id: {type: string}
-        role: {type: string, enum: [pic_mapel, panelis]}
-        name: {type: string}
-        userId: {type: string}
+        id:
+          type: string
+        role:
+          type: string
+          enum:
+            - pic_mapel
+            - panelis
+        name:
+          type: string
+        userId:
+          type: string
     AccountRow:
       type: object
       properties:
-        userId: {type: string}
-        slotId: {type: string}
-        name: {type: string}
-        username: {type: string}
-        role: {type: string, enum: [pic_mapel, panelis]}
-        subjectCode: {type: string}
-        active: {type: boolean}
-        status: {type: string, enum: [active, inactive, pending, removed]}
+        userId:
+          type: string
+        slotId:
+          type: string
+        name:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum:
+            - pic_mapel
+            - panelis
+        subjectCode:
+          type: string
+        active:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+            - pending
+            - removed
     ImportPreview:
       type: object
       properties:
-        valid: {type: boolean}
-        applied: {type: boolean}
-        count: {type: integer}
-        project: {$ref: '#/components/schemas/Project'}
+        valid:
+          type: boolean
+        applied:
+          type: boolean
+        count:
+          type: integer
+        project:
+          $ref: '#/components/schemas/Project'
         accounts:
           type: array
           items:
             type: object
             properties:
-              slotId: {type: string}
-              name: {type: string}
-              role: {type: string}
-              subjectCode: {type: string}
-              username: {type: string}
+              slotId:
+                type: string
+              name:
+                type: string
+              role:
+                type: string
+              subjectCode:
+                type: string
+              username:
+                type: string
         errors:
           type: array
           items:
             type: object
             properties:
-              row: {type: integer, description: Nomor baris Excel asli; 0 untuk masalah seluruh file}
-              column: {type: string}
-              value: {type: string}
-              message: {type: string}
+              row:
+                type: integer
+                description: Nomor baris Excel asli; 0 untuk masalah seluruh file
+              column:
+                type: string
+              value:
+                type: string
+              message:
+                type: string
+    RoundExclusion:
+      type: object
+      properties:
+        panelistId:
+          type: string
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        actorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    RoundSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+        revision:
+          type: integer
+          minimum: 1
+        roundNumber:
+          type: integer
+          minimum: 1
+        subjectCode:
+          type: string
+        panelistIds:
+          type: array
+          items:
+            type: string
+        statistics:
+          $ref: '#/components/schemas/ItemResult'
+        itemStatistics:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ItemResult'
+        submissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Submission'
+        candidateDefinition:
+          type: string
+        candidateVersion:
+          type: integer
+        roundingPolicy:
+          type: string
+          description: Aturan saat snapshot dibuat; kosong pada legacy dinormalisasi none saat laporan dibaca.
+        createdAt:
+          type: string
+          format: date-time
+        roster:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotPanelist'
+      description: >-
+        Snapshot final immutable untuk round+revision; finalisasi ulang menambah arsip. Tidak dibuat untuk
+        provenance legacy yang tidak diketahui. Jawaban snapshot tidak dikirim pada metadata round borang
+        panelis.
+    SubmissionInput:
+      type: object
+      properties:
+        roundNumber:
+          type: integer
+          minimum: 1
+        roundRevision:
+          type: integer
+          minimum: 1
+        candidateVersion:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 0
+          description: Versi respons dari server;0 untuk respons baru.
+        answer:
+          $ref: '#/components/schemas/Answer'
+        note:
+          type: string
+          maxLength: 1000
+        reviewed:
+          type: boolean
+        idempotencyKey:
+          type: string
+          maxLength: 128
+      required:
+        - roundNumber
+        - answer
+      description: >-
+        Client baru selalu mengirim roundRevision, version, candidateVersion dan idempotencyKey. Omission
+        revisi hanya kompatibel sebelum revisi2; versi harus cocok. Kunci sama dengan payload sama bersifat
+        idempoten; payload berbeda mendapat409. reviewed=true mengakui rollback.
+    ReviewInput:
+      type: object
+      properties:
+        roundNumber:
+          type: integer
+          minimum: 1
+        roundRevision:
+          type: integer
+          minimum: 1
+        version:
+          type: integer
+          minimum: 0
+        candidateVersion:
+          type: integer
+          minimum: 0
+          description: >-
+            Wajib cocok dengan subject.candidateVersion pada featureVersion>=1; omission hanya kompatibel
+            untuk proyek legacy0.
+      required:
+        - roundNumber
+        - roundRevision
+        - version
+      description: >-
+        Client baru mengirim candidateVersion bersama versi respons dan roundRevision. Server menolak konteks
+        kandidat stale dengan409.
+    ItemFeedback:
+      type: object
+      properties:
+        itemId:
+          type: string
+        roundNumber:
+          type: integer
+          minimum: 1
+        revision:
+          type: integer
+          minimum: 1
+        'n':
+          type: integer
+          minimum: 0
+        median:
+          type: number
+          format: double
+        minimum:
+          type: number
+          format: double
+        maximum:
+          type: number
+          format: double
+        values:
+          type: array
+          items:
+            type: number
+            format: double
+        ownValue:
+          type: number
+          format: double
+        smallPanel:
+          type: boolean
+      description: >-
+        Berasal dari snapshot putaran final sebelumnya. values kosong bila n<3; ownValue hanya milik panelis
+        sendiri dan tidak ada dalam diskusi PIC. Tidak mengandung nama, catatan atau kontak.
+    Discussion:
+      type: object
+      properties:
+        itemId:
+          type: string
+        roundNumber:
+          type: integer
+          minimum: 1
+        revision:
+          type: integer
+          minimum: 1
+        'n':
+          type: integer
+          minimum: 0
+        median:
+          type: number
+          format: double
+        minimum:
+          type: number
+          format: double
+        maximum:
+          type: number
+          format: double
+        values:
+          type: array
+          items:
+            type: number
+            format: double
+        smallPanel:
+          type: boolean
+        item:
+          type: object
+          properties:
+            id:
+              type: string
+            questionType:
+              $ref: '#/components/schemas/QuestionType'
+            maxScore:
+              type: integer
+      description: >-
+        Distribusi anonim dari snapshot final pada scope PIC. Tidak mengirim ownValue, nama, catatan atau
+        kontak.
+    ContactInput:
+      type: object
+      properties:
+        whatsapp:
+          type: string
+          description: Nomor Indonesia atau nomor internasional dengan kode negara; disimpan E.164.
+        email:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+      required:
+        - version
+      description: >-
+        Minimal satu kanal bila kebijakan wajib. Setiap nilai nonkosong harus valid; dua nilai kosong hanya
+        diizinkan bila koleksi kontak tidak diwajibkan. Versi lama409.
+    ContactView:
+      type: object
+      properties:
+        userId:
+          type: string
+        projectId:
+          type: string
+        subjectCode:
+          type: string
+        whatsapp:
+          type: string
+        email:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+        required:
+          type: boolean
+        valid:
+          type: boolean
+    PanelistForm:
+      type: object
+      properties:
+        project:
+          $ref: '#/components/schemas/Project'
+        subject:
+          $ref: '#/components/schemas/ProjectSubject'
+        round:
+          $ref: '#/components/schemas/Round'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        submissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Submission'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/Round'
+        previousRound:
+          type: integer
+          nullable: true
+        previousSubmissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Submission'
+        readOnly:
+          type: boolean
+        feedback:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemFeedback'
+        periodMessage:
+          type: string
+    MonitoringExclusion:
+      allOf:
+        - $ref: '#/components/schemas/RoundExclusion'
+        - type: object
+          properties:
+            name:
+              type: string
+    MonitoringNote:
+      type: object
+      properties:
+        panelistId:
+          type: string
+        panelistName:
+          type: string
+        itemId:
+          type: string
+        note:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    ReportRound:
+      type: object
+      properties:
+        number:
+          type: integer
+        revision:
+          type: integer
+        status:
+          type: string
+    ReportResponse:
+      type: object
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        included:
+          type: boolean
+        reviewed:
+          type: boolean
+        missing:
+          type: boolean
+        roster:
+          $ref: '#/components/schemas/SnapshotPanelist'
+    ReportSnapshotReference:
+      type: object
+      properties:
+        id:
+          type: string
+        roundNumber:
+          type: integer
+        revision:
+          type: integer
+        statistics:
+          $ref: '#/components/schemas/ItemResult'
+        roundingPolicy:
+          type: string
+        candidateVersion:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    ReportSubject:
+      type: object
+      properties:
+        subject:
+          $ref: '#/components/schemas/ProjectSubject'
+        round:
+          $ref: '#/components/schemas/ReportRound'
+        snapshotId:
+          type: string
+        statistics:
+          $ref: '#/components/schemas/ItemResult'
+        itemStatistics:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ItemResult'
+        roundingPolicy:
+          type: string
+        candidateDefinition:
+          type: string
+        candidateVersion:
+          type: integer
+        legacy:
+          type: boolean
+        available:
+          type: boolean
+        historical:
+          type: boolean
+        warning:
+          type: string
+        responses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportResponse'
+        archiveSnapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSnapshotReference'
+        rosterComplete:
+          type: boolean
+          description: >-
+            True hanya bila snapshot menyimpan roster lengkap. False berarti status operasional historis tidak
+            boleh ditebak.
+      description: >-
+        Snapshot final sebagai sumber roster dan agregat. available=false/legacy=true menandai provenance
+        tidak lengkap. historical=true bila arsip revisi dipilih; tidak mengubah hasil final terkini.
+    ReportManifest:
+      type: object
+      properties:
+        schemaVersion:
+          type: integer
+          example: 1
+        generatedAt:
+          type: string
+          format: date-time
+        requestedRound:
+          type: integer
+        requestedRevision:
+          type: integer
+        source:
+          type: string
+    ProjectReport:
+      type: object
+      properties:
+        project:
+          $ref: '#/components/schemas/Project'
+        subjects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSubject'
+        generatedAt:
+          type: string
+          format: date-time
+        manifest:
+          $ref: '#/components/schemas/ReportManifest'
+    ImpactSnapshotBinding:
+      type: object
+      properties:
+        subjectCode:
+          type: string
+        snapshotId:
+          type: string
+        roundNumber:
+          type: integer
+          minimum: 1
+        revision:
+          type: integer
+          minimum: 1
+    ImpactBinding:
+      type: object
+      properties:
+        projectId:
+          type: string
+        projectVersion:
+          type: integer
+        fileHash:
+          type: string
+          description: SHA-256 byte file yang di-preview.
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImpactSnapshotBinding'
+      required:
+        - projectId
+        - projectVersion
+        - fileHash
+        - snapshots
+    ImpactScore:
+      type: object
+      properties:
+        participantId:
+          type: string
+        subjectCode:
+          type: string
+        score:
+          type: number
+          format: double
+        scale:
+          type: string
+          enum:
+            - persen
+            - mentah
+        maximum:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+        percentage:
+          type: number
+          format: double
+        passed:
+          type: boolean
+    ImpactSubject:
+      type: object
+      properties:
+        subjectCode:
+          type: string
+        cutoffSnapshotId:
+          type: string
+        roundingPolicy:
+          type: string
+        cutoff:
+          type: number
+          format: double
+        operationalCutoff:
+          type: number
+          format: double
+        count:
+          type: integer
+        passed:
+          type: integer
+        failed:
+          type: integer
+        percentage:
+          type: number
+          format: double
+          description: Persentase peserta lulus.
+        distribution:
+          type: array
+          items:
+            type: integer
+        stale:
+          type: boolean
+    WorkbookError:
+      type: object
+      properties:
+        row:
+          type: integer
+        column:
+          type: string
+        value:
+          type: string
+        message:
+          type: string
+    ImpactPreview:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        count:
+          type: integer
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkbookError'
+        binding:
+          $ref: '#/components/schemas/ImpactBinding'
+        scores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImpactScore'
+        subjects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImpactSubject'
+    ImpactBatch:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        binding:
+          $ref: '#/components/schemas/ImpactBinding'
+        subjects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImpactSubject'
+        scores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImpactScore'
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    EvaluationInput:
+      type: object
+      properties:
+        instrumentVersion:
+          type: integer
+          enum:
+            - 1
+          default: 1
+        version:
+          type: integer
+          minimum: 0
+        confidence:
+          type: integer
+          minimum: 1
+          maximum: 5
+        training:
+          type: integer
+          minimum: 1
+          maximum: 5
+        timeAdequacy:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 1000
+      required:
+        - version
+        - confidence
+        - training
+        - timeAdequacy
+    Evaluation:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        subjectCode:
+          type: string
+        instrumentVersion:
+          type: integer
+          enum:
+            - 1
+        version:
+          type: integer
+          minimum: 1
+        confidence:
+          type: integer
+          minimum: 1
+          maximum: 5
+        training:
+          type: integer
+          minimum: 1
+          maximum: 5
+        timeAdequacy:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      description: Respons panelis sendiri; userId tidak diekspor JSON.
+    EvaluationView:
+      type: object
+      properties:
+        response:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Evaluation'
+        closed:
+          type: boolean
+        instrumentVersion:
+          type: integer
+          enum:
+            - 1
+        labels:
+          type: array
+          items:
+            type: string
+    EvaluationQuestion:
+      type: object
+      properties:
+        key:
+          type: string
+          enum:
+            - confidence
+            - training
+            - timeAdequacy
+        label:
+          type: string
+        distribution:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+          minItems: 5
+          maxItems: 5
+        median:
+          type: number
+          format: double
+    EvaluationAggregate:
+      type: object
+      properties:
+        instrumentVersion:
+          type: integer
+          enum:
+            - 1
+        invited:
+          type: integer
+        responded:
+          type: integer
+        missing:
+          type: integer
+        smallPanel:
+          type: boolean
+        closed:
+          type: boolean
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationQuestion'
+      description: >-
+        Agregat tiap konstruk, tanpa identitas/komentar individu. Bila responded<3, smallPanel=true dan
+        questions kosong.
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        actorId:
+          type: string
+        targetId:
+          type: string
+        projectId:
+          type: string
+        action:
+          type: string
+        outcome:
+          type: string
+        requestId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        actorName:
+          type: string
+        targetName:
+          type: string
+        actorUsername:
+          type: string
+        targetUsername:
+          type: string
+        targetLabel:
+          type: string
+          description: Keterangan target proyek atau putaran dengan bahasa manusia, tanpa ID internal.
+        projectName:
+          type: string
+        subjectName:
+          type: string
+        roundNumber:
+          type: integer
+          minimum: 1
+      description: >-
+        Aplikasi hanya menambah event; tidak ada route update/delete. Nama/username diisi dari identitas saat
+        ini bila diketahui. Tidak mengandung password, hash, token atau payload kredensial.
+    CandidateDefinitionRevision:
+      type: object
+      description: Riwayat definisi kandidat yang disimpan server; client tidak boleh menimpa riwayat.
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        definition:
+          type: string
+        actorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    SnapshotPanelist:
+      type: object
+      description: Identitas dan status tepat saat finalisasi; tidak diganti oleh status akun saat laporan dibaca.
+      properties:
+        panelistId:
+          type: string
+        panelistName:
+          type: string
+        included:
+          type: boolean
+        active:
+          type: boolean
+        removed:
+          type: boolean
+        exclusionReason:
+          type: string
