@@ -14,3 +14,10 @@ tmp/
 /qa-artifacts/
 /output/
 /outputs/
+
+# Temporary credentials created by google-github-actions/auth
+gha-creds-*.json
+
+# Python deployment tool caches
+__pycache__/
+*.pyc

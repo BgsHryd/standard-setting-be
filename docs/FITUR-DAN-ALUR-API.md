@@ -1,5 +1,7 @@
 # Fitur dan alur API Standard Setting
 
+Pembaruan 20 Oktober 2026: [fitur kontak/revisi/snapshot/audit](FEATURES-2026-10-19.md), [laporan/dampak/evaluasi](../../docs/features/reporting-impact-evaluation.md), dan [OpenAPI lengkap](openapi.yaml) mencakup route helper terbaru. Gate kontak memakai `428 CONTACT_REQUIRED`, konteks stale `409 REVISION_CONFLICT`, di luar periode `422 PERIOD_CLOSED`; login 429 mengirim `Retry-After`, dan kontrol keamanan gagal 503.
+
 Source dan retest: 13 Oktober 2026. Seluruh path API relatif ke `http://localhost:8080/api/v1`; halaman FE default `http://localhost:5176`. Kontrak lengkap: [OpenAPI](openapi.yaml). [QA retest](qa/QA-2026-10-13-RETEST.md) tidak mengganti laporan historis.
 
 ## Konvensi, autentikasi dan grant
@@ -18,7 +20,7 @@ Perubahan proyek/alokasi/akun/round/submission/completion memakai transaksi Mong
 | POST /auth/login | Publik | Login credential aktif. |
 | POST /auth/refresh | Publik | Rotasi refresh sekali pakai. |
 | POST /auth/change-password | Semua akun authenticated | Password baru + session baru. |
-| GET /me | Semua role, password selesai | Claims dan scope aktif. |
+| GET /me | Semua role, password selesai | UserView dengan id, scope aktif dan contactRequired terkini (bukan claims JWT). |
 | GET /projects | Admin | Daftar proyek. |
 | POST /projects | Admin | Draft baru. |
 | GET /projects/{id} | Admin | Detail/resume konfigurasi. |

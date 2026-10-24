@@ -88,10 +88,10 @@ func TestRemovedSlotIsNotRecycled(t *testing.T) {
 }
 func TestCatalogUniquenessAndReset(t *testing.T) {
 	ctx, s, st, p := fixture(t, true)
-	if _, err := s.CreateSubject(ctx, "  Sejarah  Dunia "); err != nil {
+	if _, err := s.CreateSubject(ctx, "  Sejarah  Dunia ", "SEJ"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateSubject(ctx, "sejarah dunia"); err == nil {
+	if _, err := s.CreateSubject(ctx, "sejarah dunia", "SEJ2"); err == nil {
 		t.Fatal("duplicate mapel accepted")
 	}
 	if err := s.ResetPassword(ctx, "p1"); err != nil {

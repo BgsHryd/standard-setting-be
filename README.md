@@ -48,3 +48,5 @@ Integration test membuat lalu menghapus database `standard-setting-migration-tes
 ## Pembaruan administrasi
 
 Versi 2 migration menyiapkan katalog dan riwayat; versi 3 menambah default legacy revisi/kontak dan indeks fitur baru tanpa merekonstruksi snapshot final. Lihat [panduan terbaru](../frontend-ss/docs/ADMIN-2026-10-14.md), [QA](docs/qa/QA-2026-10-14-ADMIN.md), dan [cara menjalankan lokal](../README.md). Backend `.env` saat ini menunjuk Mongo `ssqa`/27018 dan frontend 15177; jangan menggantinya dengan contoh rs0/27017 jika ingin memakai database lokal yang sama.
+
+- [CI/CD otomatis GitHub Actions → GCP pada branch main](deploy/cicd/README.md)

@@ -1,6 +1,6 @@
 # Dokumentasi Backend Standard Setting
 
-Dokumen disusun pada **12 Oktober 2026** dan diperbarui untuk perbaikan P1 **13 Oktober 2026** berdasarkan source `backend-ss` dan `frontend-ss` di workspace. Format kontrak API mengikuti referensi `real-backend-lms/docs/openapi.yaml`, tetapi endpoint dan payload seluruhnya berasal dari kode Standard Setting.
+Dokumen awal disusun pada **12 Oktober 2026**; kontrak endpoint, fitur baru dan migrasi diperbarui **20 Oktober 2026** berdasarkan source `backend-ss` dan `frontend-ss` di workspace. Format kontrak API mengikuti referensi `real-backend-lms/docs/openapi.yaml`, tetapi endpoint dan payload seluruhnya berasal dari kode Standard Setting.
 
 ## Cara membaca
 
@@ -15,6 +15,14 @@ Dokumen disusun pada **12 Oktober 2026** dan diperbarui untuk perbaikan P1 **13 
 9. [Verifikasi dokumen/migration](VERIFIKASI-DOKUMEN.md): hasil pemeriksaan kode, YAML, link, PDF dan test migration pada pekerjaan ini.
 
 Panduan pengguna tersedia di [docs FE](../../frontend-ss/docs/PANDUAN-FE.md), dengan dokumen terpisah untuk [Admin Super](../../frontend-ss/docs/roles/ADMIN-SUPER.md), [PIC Mapel](../../frontend-ss/docs/roles/PIC-MAPEL.md), dan [Panelis](../../frontend-ss/docs/roles/PANELIS.md).
+
+## Fitur dan operasi terbaru
+
+- [Kontak, kandidat, revisi, snapshot dan audit](FEATURES-2026-10-19.md)
+- [Laporan, dampak dan evaluasi](../../docs/features/reporting-impact-evaluation.md)
+- [Instalasi, HTTPS, backup dan restore drill](../../deployment/OPERATIONS.md)
+
+OpenAPI mencakup route helper core/reporting/security serta schema bersama. `GET /me` memakai UserView dan `contactRequired` terkini. Migration versi 3 aditif; startup demo default false.
 
 ## Konvensi
 

@@ -273,3 +273,28 @@ func TestCandidateContextHistorySurvivesEditsBeforeFinalization(t *testing.T) {
 		t.Fatalf("client erased history: %+v %v", updated, err)
 	}
 }
+
+func TestReviewRequiresTheCandidateContextActuallySeen(t *testing.T) {
+	ctx, s, st, p := fixture(t, true)
+	p.FeatureVersion = 1
+	p.Subjects[0].CandidateVersion = 1
+	p.Subjects[0].CandidateDefinition = "Kandidat pertama"
+	if err := st.SaveProject(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	row, err := s.SaveSubmissionWithOptions(ctx, "p1", "", p.ID, "MAT", 1, "MAT-001", domain.Answer{QuestionType: domain.QuestionTypePG, Value: intValue(60)}, SubmissionOptions{RoundRevision: 1, CandidateVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Subjects[0].CandidateDefinition = "Kandidat kedua"
+	p, err = s.SaveProject(ctx, p, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ReviewSubmission(ctx, "p1", p.ID, "MAT", 1, "MAT-001", 1, row.Version, 1); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("unseen candidate acknowledged: %v", err)
+	}
+	if _, err = s.ReviewSubmission(ctx, "p1", p.ID, "MAT", 1, "MAT-001", 1, row.Version, p.Subjects[0].CandidateVersion); err != nil {
+		t.Fatal(err)
+	}
+}

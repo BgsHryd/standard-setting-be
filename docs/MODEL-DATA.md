@@ -1,5 +1,7 @@
 # Model Data, Index, dan Statistik
 
+Pembaruan model 20 Oktober 2026: [OpenAPI](openapi.yaml) memuat field kandidat/history, revisi/review respons, roster snapshot, statistik sampel/SE serta kontak/evaluasi/dampak/audit. Lihat [fitur dan privasi](FEATURES-2026-10-19.md) dan [migrasi v3](MIGRATION.md#versi-3--revisi-kontak-dan-audit). Skema historis di bawah dibaca bersama tambahan tersebut; snapshot legacy tidak dilengkapi dengan status peserta hari ini.
+
 MongoDB URI default `mongodb://localhost:27017`, database `standard-setting`. Dokumen account berada di collection **users**, bukan collection singular user. API menerjemahkan BSON `_id` ke JSON `id`. ID user/project/round/submission adalah string, bukan ObjectId.
 
 ## Collection bisnis

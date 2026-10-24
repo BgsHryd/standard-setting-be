@@ -1,0 +1,131 @@
+name: Build and deploy backend to GCP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Start scratch MongoDB replica set
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name mongo-ci -p 127.0.0.1:27017:27017 \
+            mongo:7.0 --replSet rs0 --bind_ip_all
+          for attempt in {1..60}; do
+            if docker exec mongo-ci mongosh --quiet --eval \
+              'quit(db.runCommand({ping:1}).ok ? 0 : 1)' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec mongo-ci mongosh --quiet --eval \
+            'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for attempt in {1..60}; do
+            if docker exec mongo-ci mongosh --quiet --eval \
+              'quit(db.hello().isWritablePrimary ? 0 : 1)' >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          echo 'MongoDB replica set did not become primary' >&2
+          exit 1
+      - name: Run unit and integration tests
+        env:
+          MIGRATION_TEST_MONGO_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
+          QA_TEST_MONGO_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
+        run: go test ./... -count=1 -timeout=10m
+      - name: Test deployment tooling
+        run: python3 -m unittest discover -s deploy/cicd/tests -p 'test_*.py'
+      - name: Scratch MongoDB diagnostics on failure
+        if: failure()
+        run: docker logs mongo-ci || true
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    concurrency:
+      group: production-backend
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SERVICE: backend
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_VM_NAME: ${{ vars.GCP_VM_NAME }}
+      GCP_VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+      GCP_REGISTRY_LOCATION: ${{ vars.GCP_REGISTRY_LOCATION }}
+      GCP_AR_REPOSITORY: ${{ vars.GCP_AR_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate deployment variables
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in GCP_PROJECT_ID GCP_VM_NAME GCP_VM_ZONE GCP_REGISTRY_LOCATION GCP_AR_REPOSITORY; do
+            [[ -n "${!key}" ]] || { echo "Missing GitHub variable: $key" >&2; exit 1; }
+            [[ "${!key}" =~ ^[a-z0-9_-]+$ ]] || { echo "Invalid variable: $key" >&2; exit 1; }
+          done
+          echo "name=${GCP_REGISTRY_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_AR_REPOSITORY}/${SERVICE}" >> "$GITHUB_OUTPUT"
+      - name: Authenticate to GCP for image push
+        id: build-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_lifetime: 3600s
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ vars.GCP_REGISTRY_LOCATION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.build-auth.outputs.access_token }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Refresh after the build; do not reuse a token that could expire during it.
+      - name: Authenticate to GCP for deployment
+        id: deploy-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_lifetime: 3600s
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Deploy immutable image through IAP
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+          REGISTRY_TOKEN: ${{ steps.deploy-auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE" =~ ^[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$GITHUB_RUN_NUMBER" =~ ^[0-9]+$ ]]
+          printf '%s\n' "$REGISTRY_TOKEN" | gcloud compute ssh "$GCP_VM_NAME" \
+            --project="$GCP_PROJECT_ID" --zone="$GCP_VM_ZONE" \
+            --tunnel-through-iap --quiet --ssh-key-expire-after=15m --ssh-flag=-T \
+            --command="sudo -n /usr/local/sbin/ss-deploy deploy $SERVICE $IMAGE $GITHUB_SHA $GITHUB_RUN_NUMBER"

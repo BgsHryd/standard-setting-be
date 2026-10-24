@@ -4,3 +4,6 @@
 .git
 tmp
 *.log
+
+# Temporary credentials created by google-github-actions/auth
+gha-creds-*.json
