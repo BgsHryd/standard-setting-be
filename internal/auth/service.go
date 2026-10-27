@@ -79,37 +79,9 @@ func (s *Service) Login(ctx context.Context, username, password string) (Result,
 	return s.LoginFrom(ctx, username, password, "")
 }
 func (s *Service) LoginFrom(ctx context.Context, username, password, ip string) (Result, error) {
-	username = strings.TrimSpace(username)
-	if s.limiter != nil {
-		retry, err := s.limiter.ReserveLogin(ctx, strings.ToLower(username), ip)
-		if err != nil {
-			return Result{}, ErrSecurityUnavailable
-		}
-		if retry > 0 {
-			if err := s.audit(ctx, domain.User{}, "auth.login", "rate_limited"); err != nil {
-				return Result{}, err
-			}
-			return Result{}, &RateLimitError{RetryAfter: retry}
-		}
-	}
-	user, err := s.users.FindByUsername(ctx, username)
-	if err != nil || !user.Active || user.Removed || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
-		if err := s.audit(ctx, user, "auth.login", "failure"); err != nil {
-			return Result{}, err
-		}
-		return Result{}, ErrInvalidCredentials
-	}
-	if s.limiter != nil {
-		if err := s.limiter.ResetLogin(ctx, strings.ToLower(username)); err != nil {
-			return Result{}, ErrSecurityUnavailable
-		}
-	}
-	if tracker, ok := s.users.(interface {
-		UpdateLastLogin(context.Context, string, time.Time) error
-	}); ok {
-		if err := tracker.UpdateLastLogin(ctx, user.ID, time.Now().UTC()); err != nil {
-			return Result{}, err
-		}
+	user, err := s.loginUser(ctx, username, password, ip)
+	if err != nil {
+		return Result{}, err
 	}
 	result, err := s.createSession(ctx, user)
 	if err != nil {
@@ -122,6 +94,42 @@ func (s *Service) LoginFrom(ctx context.Context, username, password, ip string) 
 		return Result{}, err
 	}
 	return result, nil
+}
+
+func (s *Service) loginUser(ctx context.Context, username, password, ip string) (domain.User, error) {
+	username = strings.TrimSpace(username)
+	if s.limiter != nil {
+		retry, err := s.limiter.ReserveLogin(ctx, strings.ToLower(username), ip)
+		if err != nil {
+			return domain.User{}, ErrSecurityUnavailable
+		}
+		if retry > 0 {
+			if err := s.audit(ctx, domain.User{}, "auth.login", "rate_limited"); err != nil {
+				return domain.User{}, err
+			}
+			return domain.User{}, &RateLimitError{RetryAfter: retry}
+		}
+	}
+	user, err := s.users.FindByUsername(ctx, username)
+	if err != nil || !user.Active || user.Removed || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		if err := s.audit(ctx, user, "auth.login", "failure"); err != nil {
+			return domain.User{}, err
+		}
+		return domain.User{}, ErrInvalidCredentials
+	}
+	if s.limiter != nil {
+		if err := s.limiter.ResetLogin(ctx, strings.ToLower(username)); err != nil {
+			return domain.User{}, ErrSecurityUnavailable
+		}
+	}
+	if tracker, ok := s.users.(interface {
+		UpdateLastLogin(context.Context, string, time.Time) error
+	}); ok {
+		if err := tracker.UpdateLastLogin(ctx, user.ID, time.Now().UTC()); err != nil {
+			return domain.User{}, err
+		}
+	}
+	return user, nil
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (Result, error) {

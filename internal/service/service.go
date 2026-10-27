@@ -92,7 +92,11 @@ func (s *Service) ActivateProject(ctx context.Context, id string) (domain.Projec
 		if err != nil {
 			return err
 		}
-		for _, subject := range p.Subjects {
+		for i := range p.Subjects {
+			subject := p.Subjects[i]
+			if p.SimulationEnabled {
+				p.Subjects[i].PracticeStatus = "open"
+			}
 			if _, err := assignedPanelists(p, subject, users); err != nil {
 				return err
 			}

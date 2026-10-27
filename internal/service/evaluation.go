@@ -16,6 +16,7 @@ type evaluationStore interface {
 	ListEvaluations(context.Context, string) ([]domain.Evaluation, error)
 }
 type EvaluationView struct {
+	Message           string             `json:"message,omitempty"`
 	Response          *domain.Evaluation `json:"response"`
 	Closed            bool               `json:"closed"`
 	InstrumentVersion int                `json:"instrumentVersion"`
@@ -66,7 +67,13 @@ func (s *Service) GetEvaluation(ctx context.Context, userID string) (EvaluationV
 	if err != nil {
 		return view, err
 	}
-	view.Closed = p.EvaluationClosed
+	sub, _ := subjectOf(p, u.SubjectCode)
+	view.Closed = p.EvaluationClosed || (p.WorkflowVersion >= 1 && sub.FinalNBK == nil)
+	if p.WorkflowVersion >= 1 && sub.FinalNBK == nil {
+		view.Message = "Kuesioner dibuka setelah NBK final mapel ditetapkan."
+	} else if p.EvaluationClosed {
+		view.Message = "Periode evaluasi telah ditutup."
+	}
 	st, ok := s.store.(evaluationStore)
 	if !ok {
 		return view, errors.New("penyimpanan evaluasi tidak tersedia")
@@ -93,6 +100,10 @@ func (s *Service) SaveEvaluation(ctx context.Context, userID string, input domai
 		u, p, err := s.evaluationScope(tx, userID)
 		if err != nil {
 			return err
+		}
+		sub, _ := subjectOf(p, u.SubjectCode)
+		if p.WorkflowVersion >= 1 && sub.FinalNBK == nil {
+			return errors.New("kuesioner dibuka setelah NBK final mapel ditetapkan")
 		}
 		if p.EvaluationClosed {
 			return errors.New("periode evaluasi ditutup")

@@ -25,11 +25,14 @@ type Config struct {
 	Service        *service.Service
 	AllowedOrigins string
 	TrustedProxies []string
+	SecureCookies  bool
 }
 
 type Handler struct {
-	auth    *auth.Service
-	service *service.Service
+	auth          *auth.Service
+	service       *service.Service
+	secureCookies bool
+	allowedOrigin func(string) bool
 }
 
 func New(config Config) *App {
@@ -61,17 +64,21 @@ func New(config Config) *App {
 		c.SetUserContext(domain.WithAuditRequestID(c.UserContext(), id))
 		return c.Next()
 	})
-	app.Use(cors.New(buildCORSConfig(config.AllowedOrigins)))
-	handler := &Handler{auth: config.Auth, service: config.Service}
+	corsConfig := buildCORSConfig(config.AllowedOrigins)
+	app.Use(cors.New(corsConfig))
+	handler := &Handler{auth: config.Auth, service: config.Service, secureCookies: config.SecureCookies, allowedOrigin: corsConfig.AllowOriginsFunc}
 	api := app.Group("/api/v1")
+	api.Use(func(c *fiber.Ctx) error { c.Set("Cache-Control", "no-store"); return c.Next() })
 	api.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "standard-setting"})
 	})
-	api.Post("/auth/login", handler.login)
-	api.Post("/auth/refresh", handler.refresh)
-	api.Post("/auth/change-password", handler.authenticate, handler.changePassword)
+	api.Post("/auth/login", handler.browserOrigin, handler.login)
+	api.Get("/auth/session", handler.browserState)
+	api.Get("/auth/events", handler.browserEvents)
+	api.Post("/auth/logout", handler.authenticate, handler.browserCSRF, handler.browserLogout)
+	api.Post("/auth/change-password", handler.authenticate, handler.browserCSRF, handler.changePassword)
 
-	protected := api.Group("", handler.authenticate, handler.passwordChanged)
+	protected := api.Group("", handler.authenticate, handler.browserCSRF, handler.passwordChanged)
 	protected.Get("/me", handler.me)
 
 	admin := protected.Group("")
@@ -109,6 +116,10 @@ func New(config Config) *App {
 	panelist.Get("/form", handler.panelistForm)
 	panelist.Put("/submissions/:itemId", handler.saveSubmission)
 	handler.registerCoreRoutes(protected, admin, adminRole, pic, panelist)
+	handler.registerWorkflowRoutes(pic, panelist)
+	handler.registerAccountManagementRoutes(admin, adminRole)
+	handler.registerProjectWorkbookRoutes(admin, adminRole)
+	handler.registerTelemetryRoutes(pic, panelist)
 	handler.registerReportingRoutes(admin, adminRole, panelist)
 	handler.registerSecurityRoutes(admin, adminRole)
 
@@ -143,9 +154,10 @@ func buildCORSConfig(allowedOrigins string) cors.Config {
 			_, allowedPort := localPorts[parsed.Port()]
 			return allowedPort
 		},
-		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
-		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
-		MaxAge:       600,
+		AllowMethods:     "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,X-CSRF-Token,X-Session-ID",
+		AllowCredentials: true,
+		MaxAge:           600,
 	}
 }
 
@@ -180,42 +192,25 @@ func (h *Handler) login(c *fiber.Ctx) error {
 	if err := c.BodyParser(&request); err != nil || strings.TrimSpace(request.Username) == "" || request.Password == "" {
 		return errorResponse(c, http.StatusUnprocessableEntity, "username dan password wajib diisi")
 	}
-	result, err := h.auth.LoginFrom(c.UserContext(), strings.TrimSpace(request.Username), request.Password, c.IP())
+	result, err := h.auth.LoginBrowser(c.UserContext(), strings.TrimSpace(request.Username), request.Password, c.IP())
 	if err != nil {
 		return authError(c, err, http.StatusUnauthorized)
 	}
-	return success(c, result)
-}
-
-func (h *Handler) refresh(c *fiber.Ctx) error {
-	var request struct {
-		RefreshToken string `json:"refreshToken"`
-	}
-	if err := c.BodyParser(&request); err != nil || request.RefreshToken == "" {
-		return errorResponse(c, http.StatusUnprocessableEntity, "refresh token wajib diisi")
-	}
-	result, err := h.auth.Refresh(c.UserContext(), request.RefreshToken)
-	if err != nil {
-		return authError(c, err, http.StatusUnauthorized)
-	}
+	h.setBrowserCookie(c, result)
 	return success(c, result)
 }
 
 func (h *Handler) authenticate(c *fiber.Ctx) error {
-	header := c.Get("Authorization")
-	if !strings.HasPrefix(header, "Bearer ") || len(header) <= 7 {
-		return errorResponse(c, http.StatusUnauthorized, "akses token diperlukan")
-	}
-	claims, err := h.auth.ParseAccessToken(strings.TrimSpace(header[7:]))
+	rec, user, err := h.auth.AuthenticateBrowser(c.UserContext(), c.Cookies(h.cookieName()))
 	if err != nil {
-		return errorResponse(c, http.StatusUnauthorized, "akses token tidak valid")
+		return authError(c, err, http.StatusUnauthorized)
 	}
-	user, err := h.auth.CurrentUser(c.UserContext(), claims.Subject)
-	if err != nil || user.AuthVersion != claims.AuthVersion {
-		return errorResponse(c, http.StatusUnauthorized, "akun atau sesi sudah tidak aktif")
+	if expected := c.Get("X-Session-ID"); expected != "" && expected != rec.ID {
+		return c.Status(409).JSON(fiber.Map{"status": "error", "code": "SESSION_CHANGED", "message": "Sesi akun berubah. Muat ulang halaman."})
 	}
-	claims.Role, claims.ProjectID, claims.SubjectCode = user.Role, user.ProjectID, user.SubjectCode
-	claims.Name, claims.Username, claims.MustChangePassword = user.Name, user.Username, user.MustChangePassword
+	claims := &auth.Claims{AuthVersion: user.AuthVersion, Role: user.Role, ProjectID: user.ProjectID, SubjectCode: user.SubjectCode, Name: user.Name, Username: user.Username, MustChangePassword: user.MustChangePassword}
+	claims.Subject = user.ID
+	c.Locals("browserSession", rec)
 	c.Locals("claims", claims)
 	return c.Next()
 }
@@ -264,6 +259,12 @@ func (h *Handler) me(c *fiber.Ctx) error {
 	return success(c, auth.UserView{ID: u.ID, Username: u.Username, Name: u.Name, Role: u.Role, ProjectID: u.ProjectID, ProjectName: u.ProjectName, SubjectCode: u.SubjectCode, MustChangePassword: u.MustChangePassword, ContactRequired: required})
 }
 func authError(c *fiber.Ctx, err error, fallback int) error {
+	if errors.Is(err, auth.ErrSessionReplaced) {
+		return c.Status(401).JSON(fiber.Map{"status": "error", "code": "SESSION_REPLACED", "message": "Anda telah login di perangkat lain"})
+	}
+	if errors.Is(err, auth.ErrInvalidSession) {
+		return c.Status(401).JSON(fiber.Map{"status": "error", "code": "SESSION_EXPIRED", "message": "Sesi Anda telah berakhir. Silakan masuk kembali."})
+	}
 	var limited *auth.RateLimitError
 	if errors.As(err, &limited) {
 		c.Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(limited.RetryAfter.Seconds())))))
@@ -283,7 +284,7 @@ func (h *Handler) changePassword(c *fiber.Ctx) error {
 	if err := c.BodyParser(&request); err != nil {
 		return errorResponse(c, http.StatusUnprocessableEntity, "payload tidak valid")
 	}
-	session, err := h.auth.ChangePasswordSession(c.UserContext(), getClaims(c).Subject, getClaims(c).AuthVersion, request.CurrentPassword, request.NewPassword)
+	session, err := h.auth.ChangeBrowserPassword(c.UserContext(), c.Cookies(h.cookieName()), request.CurrentPassword, request.NewPassword)
 	if err != nil {
 		status := http.StatusUnprocessableEntity
 		if errors.Is(err, auth.ErrInvalidSession) {
@@ -292,6 +293,7 @@ func (h *Handler) changePassword(c *fiber.Ctx) error {
 		return authError(c, err, status)
 	}
 
+	h.setBrowserCookie(c, session)
 	return success(c, session)
 }
 

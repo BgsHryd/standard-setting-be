@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.mongodb.org/mongo-driver/mongo"
 	"time"
 
 	"standard-setting/backend/internal/domain"
@@ -38,6 +39,7 @@ func (s *Service) openRound(ctx context.Context, projectID, subjectCode string, 
 			if round.Status == "rolled_back" {
 				round.Revision = domain.RoundRevision(round) + 1
 				round.FinalSnapshot = nil
+				round.Receipts = nil
 			}
 			round.Status = "active"
 			round.FinalizedAt = nil
@@ -85,6 +87,19 @@ func (s *Service) completeResponses(ctx context.Context, p domain.Project, subje
 	}
 	items := []domain.Item{}
 	valid := []domain.Submission{}
+	if p.WorkflowVersion >= 1 {
+		for _, u := range panelists {
+			userRows := []domain.Submission{}
+			for _, row := range rows {
+				if row.PanelistID == u.ID {
+					userRows = append(userRows, row)
+				}
+			}
+			if !receiptMatches(receiptFor(round, u.ID, subject.CandidateVersion), userRows, subject.ItemIDs) {
+				return nil, nil, fmt.Errorf("%s belum menyelesaikan putaran", u.Name)
+			}
+		}
+	}
 	for _, itemID := range subject.ItemIDs {
 		item, err := s.store.GetItem(ctx, itemID)
 		if err != nil {
@@ -126,7 +141,26 @@ func (s *Service) RoundAction(ctx context.Context, projectID, subjectCode, actio
 		if picErr != nil || !pic.Active || pic.Removed || subject.PICUserID != userID {
 			return errors.New("akun bukan PIC mapel ini")
 		}
+		if (p.SimulationEnabled && subject.PracticeStatus == "open") || subject.FinalNBK != nil {
+			return errors.New("latihan masih dibuka atau NBK sudah dikunci")
+		}
 		current, err := s.store.CurrentRound(tx, projectID, subjectCode)
+		reopenLast := false
+		if errors.Is(err, mongo.ErrNoDocuments) && action == "rollback" {
+			history, e := s.store.ListRounds(tx, projectID, subjectCode)
+			if e != nil {
+				return e
+			}
+			for _, r := range history {
+				if r.Status == "finalized" && r.Number > current.Number {
+					current = r
+					reopenLast = true
+				}
+			}
+			if reopenLast {
+				err = nil
+			}
+		}
 		if err != nil {
 			return err
 		}
@@ -159,13 +193,30 @@ func (s *Service) RoundAction(ctx context.Context, projectID, subjectCode, actio
 			if err := s.store.SaveRound(tx, current); err != nil {
 				return err
 			}
-			result, err = s.openRound(tx, projectID, subjectCode, current.Number+1)
+			result = current
+			if p.PlannedRounds == 0 || current.Number < p.PlannedRounds {
+				result, err = s.openRound(tx, projectID, subjectCode, current.Number+1)
+			}
 			if err != nil {
 				return err
 			}
 		case "rollback":
 			if confirmation != "ROLLBACK PUTARAN" {
 				return errors.New("konfirmasi rollback tidak sesuai")
+			}
+			if reopenLast {
+				result, err = s.openRound(tx, projectID, subjectCode, current.Number)
+				if err != nil {
+					return err
+				}
+				result.Revision = domain.RoundRevision(current) + 1
+				result.FinalSnapshot = nil
+				result.Receipts = nil
+				result.UpdatedAt = now
+				if err = s.store.SaveRound(tx, result); err != nil {
+					return err
+				}
+				break
 			}
 			if current.Number <= 1 {
 				return errors.New("putaran pertama tidak dapat di-rollback")
@@ -181,6 +232,7 @@ func (s *Service) RoundAction(ctx context.Context, projectID, subjectCode, actio
 			}
 			result.Revision = domain.RoundRevision(result) + 1
 			result.FinalSnapshot = nil
+			result.Receipts = nil
 			result.UpdatedAt = now
 			if err = s.store.SaveRound(tx, result); err != nil {
 				return err
@@ -203,11 +255,14 @@ func publicRound(r domain.Round) domain.Round {
 	r.FinalSnapshot = nil
 	r.Snapshots = nil
 	r.ExcludedPanelists = nil
+	r.Receipts = nil
 	r.Revision = domain.RoundRevision(r)
 	return r
 }
 
 type PanelistForm struct {
+	SubmittedAt         *time.Time            `json:"submittedAt"`
+	AllRoundsDone       bool                  `json:"allRoundsDone"`
 	Project             domain.Project        `json:"project"`
 	Subject             domain.ProjectSubject `json:"subject"`
 	Round               domain.Round          `json:"round"`
@@ -278,7 +333,13 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 		return PanelistForm{}, err
 	}
 	feedback := s.feedback(ctx, userID, p, subject, round, history)
-	readOnly := !domain.ProjectWritable(p, time.Now().UTC()) || roundExcluded(round, userID)
+	receipt := receiptFor(round, userID, subject.CandidateVersion)
+	var submittedAt *time.Time
+	if receipt != nil {
+		submittedAt = receipt.SubmittedAt
+	}
+	allDone := round.Status != "active"
+	readOnly := !domain.ProjectWritable(p, time.Now().UTC()) || roundExcluded(round, userID) || allDone || submittedAt != nil || (p.SimulationEnabled && subject.PracticeStatus == "open") || subject.FinalNBK != nil
 	message := ""
 	if !domain.ProjectWritable(p, time.Now().UTC()) {
 		message = ErrPeriodClosed.Error()
@@ -289,7 +350,7 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 	for i := range history {
 		history[i] = publicRound(history[i])
 	}
-	return PanelistForm{Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
+	return PanelistForm{SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
 }
 
 func (s *Service) SaveSubmission(ctx context.Context, userID, name, projectID, subjectCode string, number int, itemID string, answer domain.Answer) (domain.Submission, error) {
@@ -318,20 +379,26 @@ func (s *Service) CompleteProject(ctx context.Context, id, confirmation string) 
 			if err != nil {
 				return err
 			}
+			if p.WorkflowVersion >= 1 && subject.FinalNBK == nil {
+				return fmt.Errorf("NBK final %s belum ditetapkan", subject.Name)
+			}
 			var final domain.Round
 			for _, round := range history {
-				if round.Status == "finalized" && round.Number > final.Number {
+				if round.Status == "finalized" && ((subject.FinalNBK == nil && round.Number > final.Number) || (subject.FinalNBK != nil && round.FinalSnapshot != nil && round.FinalSnapshot.ID == subject.FinalNBK.SnapshotID)) {
 					final = round
 				}
 			}
 			if final.Number == 0 {
 				return fmt.Errorf("mapel %s belum memiliki putaran yang difinalisasi", subject.Name)
 			}
-			current, err := s.store.CurrentRound(tx, id, subject.Code)
+			current, err := s.displayRound(tx, p, subject.Code, history)
 			if err != nil {
 				return err
 			}
-			pending, err := s.store.ListSubmissions(tx, id, subject.Code, current.Number, "")
+			pending := []domain.Submission{}
+			if current.Status == "active" {
+				pending, err = s.store.ListSubmissions(tx, id, subject.Code, current.Number, "")
+			}
 			if err != nil {
 				return err
 			}
@@ -395,7 +462,9 @@ func (s *Service) CompleteProject(ctx context.Context, id, confirmation string) 
 			if err := s.store.UpsertItems(tx, items); err != nil {
 				return err
 			}
-			current.Status = "closed"
+			if current.Status == "active" {
+				current.Status = "closed"
+			}
 			current.UpdatedAt = now
 			if err := s.store.SaveRound(tx, current); err != nil {
 				return err

@@ -58,6 +58,10 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			p.Version = 1
 			p.AccountsGenerated = false
 			p.FeatureVersion = 1
+			p.WorkflowVersion = 1
+			if p.PlannedRounds == 0 {
+				p.PlannedRounds = 3
+			}
 			p.SourceProjectID = ""
 			if p.RoundingPolicy == "" {
 				p.RoundingPolicy = "ceil_1pp"
@@ -91,6 +95,12 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			p.Code, p.CreatedBy, p.CreatedAt, p.Status, p.CompletedAt = old.Code, old.CreatedBy, old.CreatedAt, old.Status, old.CompletedAt
 			p.Version = old.Version + 1
 			p.FeatureVersion, p.SourceProjectID = old.FeatureVersion, old.SourceProjectID
+			p.WorkflowVersion = old.WorkflowVersion
+			if p.PlannedRounds != old.PlannedRounds || p.SimulationEnabled != old.SimulationEnabled {
+				if old.Status != domain.ProjectDraft {
+					return errors.New("pengaturan putaran dan latihan hanya dapat diubah saat Draft; PIC dapat menambah putaran")
+				}
+			}
 			if p.RoundingPolicy == "" {
 				p.RoundingPolicy = old.RoundingPolicy
 			}
@@ -108,6 +118,9 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			if err != nil {
 				return err
 			}
+		}
+		if p.PlannedRounds < 0 || p.PlannedRounds > 20 || (p.WorkflowVersion >= 1 && p.PlannedRounds < 1) {
+			return errors.New("jumlah putaran harus 1–20")
 		}
 		if p.RoundingPolicy != "" && p.RoundingPolicy != "none" && p.RoundingPolicy != "nearest_1pp" && p.RoundingPolicy != "ceil_1pp" {
 			return errors.New("kebijakan pembulatan tidak valid")
@@ -146,6 +159,10 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 				if v.Code == sub.Code {
 					previous = v
 				}
+			}
+			sub.PracticeStatus, sub.FinalNBK = previous.PracticeStatus, previous.FinalNBK
+			if old.Status == domain.ProjectActive && previous.Code == "" && p.SimulationEnabled {
+				sub.PracticeStatus = "open"
 			}
 			sub.CandidateDefinition = strings.TrimSpace(sub.CandidateDefinition)
 			if len([]rune(sub.CandidateDefinition)) > 8000 {
@@ -269,7 +286,11 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		}
 		if old.Status == domain.ProjectActive {
 			for _, sub := range p.Subjects {
-				if _, err := s.store.CurrentRound(tx, p.ID, sub.Code); err != nil {
+				rounds, err := s.store.ListRounds(tx, p.ID, sub.Code)
+				if err != nil {
+					return err
+				}
+				if len(rounds) == 0 {
 					if _, err = s.openRound(tx, p.ID, sub.Code, 1); err != nil {
 						return err
 					}

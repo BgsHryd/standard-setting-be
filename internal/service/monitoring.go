@@ -3,23 +3,26 @@ package service
 import (
 	"context"
 	"errors"
+	"go.mongodb.org/mongo-driver/mongo"
 	"time"
 
 	"standard-setting/backend/internal/domain"
 )
 
 type MonitoringPanelist struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	Username     string     `json:"username"`
-	Done         int        `json:"done"`
-	Total        int        `json:"total"`
-	Status       string     `json:"status"`
-	LastActive   *time.Time `json:"lastActive"`
-	WhatsApp     string     `json:"whatsapp"`
-	Email        string     `json:"email"`
-	ContactValid bool       `json:"contactValid"`
-	NeedsReview  int        `json:"needsReview"`
+	Telemetry    *domain.PanelistTelemetry `json:"telemetry,omitempty"`
+	SubmittedAt  *time.Time                `json:"submittedAt"`
+	ID           string                    `json:"id"`
+	Name         string                    `json:"name"`
+	Username     string                    `json:"username"`
+	Done         int                       `json:"done"`
+	Total        int                       `json:"total"`
+	Status       string                    `json:"status"`
+	LastActive   *time.Time                `json:"lastActive"`
+	WhatsApp     string                    `json:"whatsapp"`
+	Email        string                    `json:"email"`
+	ContactValid bool                      `json:"contactValid"`
+	NeedsReview  int                       `json:"needsReview"`
 }
 
 var errRoundUnavailable = errors.New("putaran tidak ditemukan")
@@ -36,24 +39,31 @@ type MonitoringNote struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 type Monitoring struct {
-	Project     domain.Project        `json:"project"`
-	Subject     domain.ProjectSubject `json:"subject"`
-	Round       domain.Round          `json:"round"`
-	History     []domain.Round        `json:"history"`
-	Panelists   []MonitoringPanelist  `json:"panelists"`
-	Items       []domain.Item         `json:"items"`
-	Statistics  *domain.ItemResult    `json:"statistics"`
-	TotalDone   int                   `json:"totalDone"`
-	TotalItems  int                   `json:"totalItems"`
-	CanFinalize bool                  `json:"canFinalize"`
-	CanRollback bool                  `json:"canRollback"`
-	Excluded    []MonitoringExclusion `json:"excluded"`
-	Notes       []MonitoringNote      `json:"notes"`
+	FinalNBKChoices []FinalNBKChoice      `json:"finalNBKChoices"`
+	Project         domain.Project        `json:"project"`
+	Subject         domain.ProjectSubject `json:"subject"`
+	Round           domain.Round          `json:"round"`
+	History         []domain.Round        `json:"history"`
+	Panelists       []MonitoringPanelist  `json:"panelists"`
+	Items           []domain.Item         `json:"items"`
+	Statistics      *domain.ItemResult    `json:"statistics"`
+	TotalDone       int                   `json:"totalDone"`
+	TotalItems      int                   `json:"totalItems"`
+	CanFinalize     bool                  `json:"canFinalize"`
+	CanRollback     bool                  `json:"canRollback"`
+	Excluded        []MonitoringExclusion `json:"excluded"`
+	Notes           []MonitoringNote      `json:"notes"`
 }
 
 func (s *Service) displayRound(ctx context.Context, p domain.Project, subjectCode string, history []domain.Round) (domain.Round, error) {
 	if p.Status == domain.ProjectActive {
-		return s.store.CurrentRound(ctx, p.ID, subjectCode)
+		r, err := s.store.CurrentRound(ctx, p.ID, subjectCode)
+		if err == nil {
+			return r, nil
+		}
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return r, err
+		}
 	}
 	for i := len(history) - 1; i >= 0; i-- {
 		if history[i].Status == "finalized" {
@@ -136,6 +146,12 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 		byUser[row.PanelistID][row.ItemID] = row
 	}
 	result := Monitoring{Project: p, Subject: subject, Round: round, History: history, Panelists: []MonitoringPanelist{}, Items: ordered, TotalItems: len(subject.ItemIDs), Excluded: []MonitoringExclusion{}, Notes: []MonitoringNote{}}
+	result.FinalNBKChoices = []FinalNBKChoice{}
+	for _, r := range history {
+		if r.Status == "finalized" && r.FinalSnapshot != nil {
+			result.FinalNBKChoices = append(result.FinalNBKChoices, FinalNBKChoice{SnapshotID: r.FinalSnapshot.ID, RoundNumber: r.Number, Revision: domain.RoundRevision(r), Statistics: r.FinalSnapshot.Statistics})
+		}
+	}
 	for _, exclusion := range round.ExcludedPanelists {
 		for _, u := range users {
 			if u.ID == exclusion.PanelistID && u.Active && !u.Removed {
@@ -143,10 +159,21 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 			}
 		}
 	}
+	telemetry, err := s.TelemetryForRound(ctx, projectID, subjectCode, round.Number, domain.RoundRevision(round))
+	if err != nil {
+		return Monitoring{}, err
+	}
 	scores := []float64{}
 	for _, user := range panelists {
 		responses := byUser[user.ID]
 		panelist := MonitoringPanelist{ID: user.ID, Name: user.Name, Username: user.Username, Done: 0, Total: len(subject.ItemIDs), Status: "Belum Menilai"}
+		if row, ok := telemetry[user.ID]; ok {
+			panelist.Telemetry = &row
+			if panelist.LastActive == nil || row.LastActive.After(*panelist.LastActive) {
+				at := row.LastActive
+				panelist.LastActive = &at
+			}
+		}
 		if st, ok := s.store.(contactStore); ok {
 			c, e := st.GetContact(ctx, user.ID)
 			if e == nil {
@@ -169,8 +196,15 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 				panelist.LastActive = &at
 			}
 		}
+		receipt := receiptFor(round, user.ID, subject.CandidateVersion)
+		if receipt != nil {
+			panelist.SubmittedAt = receipt.SubmittedAt
+		}
 		if panelist.Done == panelist.Total && panelist.Total > 0 {
 			panelist.Status = "Selesai"
+			if p.WorkflowVersion >= 1 && receipt == nil && round.Status == "active" {
+				panelist.Status = "Belum Dikirim"
+			}
 			weighted, total := 0.0, 0.0
 			for _, item := range ordered {
 				weighted += responseValue(responses[item.ID].Answer, item.MaxScore) * float64(item.MaxScore)
@@ -209,8 +243,16 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 		result.History[i].Snapshots = nil
 		result.History[i].Revision = domain.RoundRevision(result.History[i])
 	}
-	result.CanFinalize = ready && p.Status == domain.ProjectActive && round.Status == "active"
-	result.CanRollback = p.Status == domain.ProjectActive && round.Number > 1 && round.Status == "active"
+	submitted := true
+	if p.WorkflowVersion >= 1 {
+		for _, u := range result.Panelists {
+			if u.SubmittedAt == nil {
+				submitted = false
+			}
+		}
+	}
+	result.CanFinalize = submitted && !(p.SimulationEnabled && subject.PracticeStatus == "open") && ready && p.Status == domain.ProjectActive && round.Status == "active"
+	result.CanRollback = p.Status == domain.ProjectActive && subject.FinalNBK == nil && !(p.SimulationEnabled && subject.PracticeStatus == "open") && ((round.Number > 1 && round.Status == "active") || (p.PlannedRounds > 0 && round.Status == "finalized"))
 	return result, nil
 }
 

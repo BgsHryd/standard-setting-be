@@ -235,6 +235,9 @@ func (s *Service) SaveSubmissionWithOptions(ctx context.Context, userID, name, p
 		if err != nil {
 			return err
 		}
+		if (p.SimulationEnabled && sub.PracticeStatus == "open") || sub.FinalNBK != nil {
+			return errors.New("penilaian belum dibuka atau sudah dikunci")
+		}
 		u, err := s.store.FindByID(tx, userID)
 		if err != nil || !u.Active || u.Removed || u.Role != domain.RolePanelist || u.ProjectID != p.ID || u.SubjectCode != subjectCode || !contains(sub.PanelistUserIDs, userID) {
 			return errors.New("panelis tidak ditugaskan pada proyek/mapel ini")
@@ -261,6 +264,9 @@ func (s *Service) SaveSubmissionWithOptions(ctx context.Context, userID, name, p
 		r, err := s.store.CurrentRound(tx, p.ID, subjectCode)
 		if err != nil || r.Number != number || r.Status != "active" {
 			return ErrRevisionConflict
+		}
+		if receiptFor(r, userID, sub.CandidateVersion) != nil {
+			return errors.New("putaran sudah dikirim; buka kembali untuk mengubah jawaban")
 		}
 		revision := domain.RoundRevision(r)
 		if (input.RoundRevision != revision && !(input.RoundRevision == 0 && revision == 1)) || roundExcluded(r, userID) {
@@ -498,7 +504,7 @@ func (s *Service) CopyProject(ctx context.Context, id, name, actor string) (doma
 		for _, sub := range source.Subjects {
 			subjs = append(subjs, domain.ProjectSubject{Code: sub.Code, Name: sub.Name, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: 1, PanelistCount: sub.PanelistCount, PanelistNames: append([]string(nil), sub.PanelistNames...), PICName: sub.PICName, ItemIDs: []string{}, PanelistUserIDs: []string{}})
 		}
-		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis, RoundingPolicy: source.RoundingPolicy}, actor)
+		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, PlannedRounds: source.PlannedRounds, SimulationEnabled: source.SimulationEnabled, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis, RoundingPolicy: source.RoundingPolicy}, actor)
 		if err != nil {
 			return err
 		}

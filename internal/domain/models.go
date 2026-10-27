@@ -54,6 +54,9 @@ type User struct {
 }
 
 type Project struct {
+	WorkflowVersion       int              `json:"workflowVersion" bson:"workflowVersion"`
+	PlannedRounds         int              `json:"plannedRounds" bson:"plannedRounds"`
+	SimulationEnabled     bool             `json:"simulationEnabled" bson:"simulationEnabled"`
 	FeatureVersion        int              `json:"featureVersion" bson:"featureVersion"`
 	CollectContactPanelis bool             `json:"collectContactPanelis" bson:"collectContactPanelis"`
 	RoundingPolicy        string           `json:"roundingPolicy" bson:"roundingPolicy"`
@@ -85,6 +88,8 @@ type CandidateDefinitionRevision struct {
 }
 
 type ProjectSubject struct {
+	PracticeStatus      string                        `json:"practiceStatus" bson:"practiceStatus"`
+	FinalNBK            *NBKDecision                  `json:"finalNBK,omitempty" bson:"finalNBK,omitempty"`
 	CandidateHistory    []CandidateDefinitionRevision `json:"candidateHistory,omitempty" bson:"candidateHistory,omitempty"`
 	CandidateDefinition string                        `json:"candidateDefinition" bson:"candidateDefinition"`
 	CandidateVersion    int                           `json:"candidateVersion" bson:"candidateVersion"`
@@ -135,6 +140,7 @@ type ItemResult struct {
 }
 
 type Round struct {
+	Receipts          []RoundReceipt   `json:"-" bson:"receipts"`
 	Revision          int              `json:"revision" bson:"revision"`
 	ExcludedPanelists []RoundExclusion `json:"excludedPanelists" bson:"excludedPanelists"`
 	FinalSnapshot     *RoundSnapshot   `json:"finalSnapshot,omitempty" bson:"finalSnapshot,omitempty"`

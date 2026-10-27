@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Standard Setting API
-  version: '2026-10-20'
+  version: '2026-10-26'
   description: >-
     Kontrak statis berdasarkan seluruh file produksi internal/httpapi/*.go dan model aktif. Base path /api/v1.
     JSON sukses memakai HTTP 200 dan envelope status/data; unduhan CSV/XLSX mengirim berkas langsung. Akun
@@ -15,7 +15,7 @@ servers:
   - url: /api/v1
     description: Relative path bila aplikasi ditempatkan di origin yang sama
 security:
-  - BearerAuth: []
+  - CookieAuth: []
 tags:
   - name: Health
   - name: Auth
@@ -30,6 +30,8 @@ tags:
   - name: Impact
   - name: Evaluation
   - name: Audit
+  - name: Practice
+  - name: Telemetry
 paths:
   /health:
     get:
@@ -66,7 +68,7 @@ paths:
       operationId: login
       summary: Login dengan username dan password
       description: >-
-        User aktif dan bcrypt harus cocok. Membuat JWT 15 menit dan refresh Redis 7 hari. Counter atomik
+        User aktif dan bcrypt harus cocok. Membuat cookie HttpOnly dan sesi Redis absolut 15 menit. Login terbaru menggantikan sesi lama. Origin yang diizinkan dan Content-Type application/json wajib. Counter atomik
         Redis: 5 percobaan/username dan 20/IP per15menit; sukses mereset username, IP tetap membatasi
         spraying. Header IP hanya dipercaya dari proxy yang dikonfigurasi. Kegagalan tidak membocorkan
         username terdaftar. Login/gagal login diaudit tanpa rahasia.
@@ -92,40 +94,50 @@ paths:
           $ref: '#/components/responses/SecurityUnavailable'
         default:
           $ref: '#/components/responses/Error'
-  /auth/refresh:
-    post:
-      tags:
-        - Auth
-      security: []
-      operationId: refresh
-      summary: Rotasi refresh token dan access token
-      description: >-
-        Refresh token dikonsumsi dengan GETDEL dan dirotasi; token hilang/terpakai/versi auth berubah
-        mendapat401. Kegagalan Redis saat limiter produksi dikonfigurasi mendapat503. contactRequired dihitung
-        ulang.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - refreshToken
-              properties:
-                refreshToken:
-                  type: string
-                  minLength: 1
+  /auth/session:
+    get:
+      tags: [Auth]
+      operationId: browserState
+      summary: Pulihkan metadata sesi dari cookie; tidak memperpanjang expiry
       responses:
         '200':
           $ref: '#/components/responses/AuthResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
         '503':
           $ref: '#/components/responses/SecurityUnavailable'
-        default:
-          $ref: '#/components/responses/Error'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: browserLogout
+      summary: Cabut sesi pemanggil di Redis
+      description: Origin dan X-CSRF-Token wajib. Tidak mengirim Set-Cookie untuk mencegah respons lama menghapus cookie baru. Cookie yang dicabut tetap tidak valid.
+      responses:
+        '200':
+          description: Sesi dicabut
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Origin atau CSRF tidak valid
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
+  /auth/events:
+    get:
+      tags: [Auth]
+      operationId: browserEvents
+      summary: Notifikasi sesi melalui SSE dengan cookie
+      description: Event session memuat sessionId, code dan message. SESSION_REPLACED menampilkan Anda telah login di perangkat lain. Tidak ada credential dalam URL.
+      responses:
+        '200':
+          description: Stream event dan heartbeat
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
   /auth/change-password:
     post:
       tags:
@@ -137,11 +149,11 @@ paths:
       operationId: changePassword
       summary: Ganti password first login
       description: |-
-        UserId dari JWT sub. Confirmation password hanya divalidasi FE, tidak dikirim.
+        UserId dari sesi Redis. Origin dan X-CSRF-Token wajib. Confirmation password hanya divalidasi FE, tidak dikirim.
         Endpoint tidak membutuhkan passwordChanged middleware. New password minimal
         6 byte di BE dan berbeda dari current password. Respons menerbitkan session
-        baru dengan mustChangePassword false; FE mengganti access/refresh token.
-         Password dan authVersion diperbarui bersamaan dengan audit dalam transaksi; access/refresh lama ditolak. Tidak menyediakan kemampuan melihat password.
+        baru dengan mustChangePassword false; FE mengganti metadata sesi di memori dan browser menerima cookie baru.
+         Password dan authVersion diperbarui bersamaan dengan audit dalam transaksi; sesi lama ditolak. Tidak menyediakan kemampuan melihat password.
       requestBody:
         required: true
         content:
@@ -180,7 +192,7 @@ paths:
       summary: Profil routing sesi aktif
       description: >-
         Membaca user aktif dan kebijakan kontak terkini. Respons UserView berisi id dan contactRequired, bukan
-        payload Claims JWT. Password wajib sudah diganti; kontak belum lengkap tetap dapat membaca /me.
+        identitas sesi. Password wajib sudah diganti; kontak belum lengkap tetap dapat membaca /me.
       responses:
         '200':
           description: Profil sesi aktif
@@ -342,7 +354,8 @@ paths:
       summary: Validasi checklist dan aktifkan proyek
       description: >-
         Tanpa body. Hanya Draft dengan checklist lengkap, akun aktif ditugaskan dan item dimiliki proyek.
-        Membuka round 1 active tiap mapel dan aktivasi dalam transaksi.
+        Membuka round 1 active tiap mapel dan aktivasi dalam transaksi. Jika simulationEnabled=true, latihan dibuka
+        per mapel dan penilaian nyata tetap terkunci sampai PIC menutup latihan.
       responses:
         '200':
           $ref: '#/components/responses/ProjectResponse'
@@ -371,7 +384,8 @@ paths:
       summary: Tandai proyek active sebagai completed
       description: >-
         Hanya active; setiap mapel wajib punya putaran finalized dengan semua respons valid dan lengkap.
-        Putaran aktif berikutnya harus kosong. Transaksi menyimpan snapshot finalResult per item, menandai
+        Pada workflowVersion>=1 setiap mapel wajib memiliki finalNBK terkunci; snapshot pilihan keputusan tersebut
+        dipakai sebagai hasil final. Transaksi menyimpan snapshot finalResult per item, menandai
         tested/readOnly, menutup round kosong dan menyelesaikan project.
       requestBody:
         required: true
@@ -758,6 +772,44 @@ paths:
           $ref: '#/components/responses/UsersResponse'
         default:
           $ref: '#/components/responses/ProtectedError'
+    post:
+      tags:
+        - "Users"
+      x-roles:
+        - "admin_super"
+      operationId: "createParticipantAccount"
+      summary: "Tambah akun PIC atau panelis ke proyek"
+      description: "Proyek Draft/Active dan projectVersion terkini wajib. Mengisi slot kosong yang cocok atau menambah slot baru; satu PIC per mapel, maksimal 1000 panelis. Username unik; nama dan username dinormalisasi. Akun aktif menggunakan INITIAL_PASSWORD, wajib mengganti password. Menyinkronkan roster/slots dan readiness serta menaikkan versi proyek dalam transaksi."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/ParticipantAccountInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/User"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+        '404':
+          "$ref": "#/components/responses/NotFound"
   /items:
     get:
       tags:
@@ -961,8 +1013,8 @@ paths:
       operationId: adminMonitoring
       summary: Monitoring per proyek dan mapel
       description: >-
-        FE query halaman subject dipetakan ke subjectCode API. Polling 10 detik. Service ensureRound dapat
-        membuat round jika tidak ada active round.
+        FE query halaman subject dipetakan ke subjectCode API. Polling 10 detik. Membaca putaran aktif atau
+        putaran finalized terakhir jika rencana telah selesai; tidak membuat putaran saat GET.
       parameters:
         - $ref: '#/components/parameters/SubjectQuery'
       responses:
@@ -979,7 +1031,7 @@ paths:
       x-roles:
         - pic_mapel
       operationId: picMonitoring
-      summary: Monitoring PIC dari scope JWT
+      summary: Monitoring PIC dari scope sesi
       description: |
         FE tidak mengirim query. Scope projectId/subjectCode berasal dari akun aktif.
         Override query hanya diterima jika sama dengan penugasan; scope lain 403.
@@ -1035,9 +1087,13 @@ paths:
       operationId: roundAction
       summary: Finalisasi atau rollback putaran aktif
       description: |-
-        Dua tahap konfirmasi di FE, satu request eksekusi di BE. Scope dari JWT.
-        finalize membuat n+1 active setelah n finalized. rollback mengaktifkan n-1
-        setelah n rolled_back; n=1 ditolak. Finalisasi wajib semua panelis/item lengkap.
+        Dua tahap konfirmasi di FE, satu request eksekusi di BE. Scope dari sesi.
+        finalize menyimpan snapshot n finalized dan membuat n+1 active hanya jika belum mencapai plannedRounds
+        (atau plannedRounds=0 legacy). Pada putaran rencana terakhir, respons tetap round finalized tanpa
+        membuat putaran tambahan. rollback putaran aktif mengaktifkan n-1 setelah n rolled_back; n=1 aktif ditolak.
+        Bila seluruh putaran terencana sudah final dan NBK belum dikunci, rollback membuka kembali putaran final terakhir (termasuk putaran 1), menambah revisi dan mewajibkan tinjau ulang.
+        Finalisasi wajib semua panelis/item lengkap; workflowVersion>=1 juga mengharuskan receipt selesai
+        valid setiap panelis efektif. Latihan terbuka dan finalNBK terkunci menolak aksi putaran.
         RoundNumber harus sama dengan putaran aktif untuk mencegah aksi stale.
         Round yang sudah ada diaktifkan kembali tanpa duplikasi nomor/ID.
          Kirim roundRevision saat ini; omission hanya kompatibel pada revisi1. Rollback menaikkan revisi yang dibuka kembali dan respons harus ditinjau ulang. Snapshot final immutable; finalisasi ulang menambah arsip revisi baru.
@@ -1082,7 +1138,7 @@ paths:
                   roundNumber: 2
       responses:
         '200':
-          description: Round baru aktif atau round sebelumnya yang diaktifkan kembali
+          description: Round berikutnya aktif, round terakhir finalized, atau round sebelumnya diaktifkan kembali
           content:
             application/json:
               schema:
@@ -1105,9 +1161,9 @@ paths:
       x-roles:
         - panelis
       operationId: panelistForm
-      summary: Borang putaran aktif user
+      summary: Borang putaran aktif atau hasil putaran terakhir user
       description: |-
-        Tanpa params/body; userId/projectId/subjectCode dari JWT. Submissions hanya
+        Tanpa params/body; userId/projectId/subjectCode dari sesi. Submissions hanya
         user dan round aktif; proyek selesai menampilkan putaran final readOnly.
         PreviousRound dan previousSubmissions memuat respons putaran finalized sebelumnya.
         Draft ditolak tanpa membuat round. FE polling setiap 10 detik.
@@ -1143,7 +1199,8 @@ paths:
       description: >-
         Simpan jawaban valid dan catatan pada scope user/round aktif. Periode start inklusif/end eksklusif,
         gate kontak, penugasan, versi kandidat, versi respons dan roundRevision dicek server. Antrean
-        terlambat/stale ditolak. reviewed=true mengakui jawaban pada revisi rollback; hanya ACK server
+        terlambat/stale ditolak. Receipt selesai, latihan terbuka, dan finalNBK mengunci perubahan jawaban.
+        reviewed=true mengakui jawaban pada revisi rollback; hanya ACK server
         menandai tersimpan.
       parameters:
         - name: itemId
@@ -2048,13 +2105,583 @@ paths:
       description: >-
         Maksimal1000 event terbaru, urut createdAt descending. Filter project/action tetap berlaku saat
         pencarian nama. Retensi diatur operasi; tidak ada TTL penghapusan otomatis.
+  "/panelist/rounds/submit":
+    post:
+      tags:
+        - "Rounds"
+      x-roles:
+        - "panelis"
+      operationId: "submitPanelistRound"
+      summary: "Selesaikan putaran panelis secara eksplisit"
+      description: "Seluruh butir wajib tersimpan, valid, ditinjau pada revisi putaran dan versi kandidat saat ini. Receipt mengikat versi setiap respons; permintaan identik bersifat idempoten. Borang menjadi read-only setelah selesai. Scope hanya panelis pemanggil; penilaian nyata aktif, periode dan kontak wajib memenuhi kebijakan."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/RoundScopeInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/RoundReceipt"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        '428':
+          "$ref": "#/components/responses/ContactRequired"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/panelist/rounds/reopen":
+    post:
+      tags:
+        - "Rounds"
+      x-roles:
+        - "panelis"
+      operationId: "reopenPanelistRound"
+      summary: "Buka kembali jawaban panelis pada putaran aktif"
+      description: "Menghapus receipt selesai milik panelis pemanggil tanpa menghapus jawaban. Hanya putaran aktif dengan nomor/revisi yang sesuai; setelah PIC memfinalisasi, putaran tidak dapat dibuka lewat endpoint ini. Scope dari sesi, periode serta kebijakan kontak tetap berlaku."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/RoundScopeInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/RoundReceipt"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        '428':
+          "$ref": "#/components/responses/ContactRequired"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/panelist/practice":
+    get:
+      tags:
+        - "Practice"
+      x-roles:
+        - "panelis"
+      operationId: "getPractice"
+      summary: "Baca sesi latihan panelis"
+      description: "Tiga butir contoh tetap (PG, PG kompleks, esai), terpisah dari bank/alokasi dan jawaban penilaian nyata. Tidak membuat sesi saat GET. Memerlukan kontak yang lengkap jika diwajibkan proyek."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/PracticeView"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        '428':
+          "$ref": "#/components/responses/ContactRequired"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/panelist/practice/start":
+    post:
+      tags:
+        - "Practice"
+      x-roles:
+        - "panelis"
+      operationId: "startPractice"
+      summary: "Mulai latihan selama 10 menit"
+      description: "Tanpa body. Hanya proyek aktif dengan simulationEnabled=true dan practiceStatus=open. Mengembalikan sesi yang sudah ada tanpa mereset timer; setiap panelis memiliki satu sesi latihan terisolasi."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/PracticeView"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        '428':
+          "$ref": "#/components/responses/ContactRequired"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/panelist/practice/answers/{itemId}":
+    put:
+      tags:
+        - "Practice"
+      x-roles:
+        - "panelis"
+      operationId: "savePracticeAnswer"
+      summary: "Simpan jawaban butir latihan"
+      description: "Memerlukan version sesi terkini, jawaban valid sesuai jenis/skor butir contoh, latihan belum selesai, timer belum habis, serta PIC belum menutup latihan. Penyimpanan menaikkan version. Tidak mengubah penilaian nyata."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+        - name: "itemId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            enum:
+              - "practice-pg"
+              - "practice-complex"
+              - "practice-essay"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/PracticeAnswerInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/PracticeView"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        '428':
+          "$ref": "#/components/responses/ContactRequired"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/panelist/practice/finish":
+    post:
+      tags:
+        - "Practice"
+      x-roles:
+        - "panelis"
+      operationId: "finishPractice"
+      summary: "Tandai latihan panelis selesai"
+      description: "Menyimpan finishedAt dengan version sesi terkini. Tidak mensyaratkan semua butir contoh terisi. Tetap dapat menandai selesai setelah timer habis selama PIC belum menutup latihan. Latihan tidak dapat dimulai ulang."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/PracticeVersionInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/PracticeView"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        '428':
+          "$ref": "#/components/responses/ContactRequired"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/pic/practice/end":
+    post:
+      tags:
+        - "Practice"
+      x-roles:
+        - "pic_mapel"
+      operationId: "endPractice"
+      summary: "Tutup latihan mapel dan mulai penilaian nyata"
+      description: "Hanya PIC yang ditugaskan; projectVersion harus cocok. Mengubah practiceStatus menjadi closed dan menaikkan versi proyek. Timer serta jawaban latihan tetap terpisah; tidak menunggu seluruh panelis menyelesaikan latihan."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/EndPracticeInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/UpdatedResult"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/pic/nbk/final":
+    post:
+      tags:
+        - "Rounds"
+      x-roles:
+        - "pic_mapel"
+      operationId: "lockFinalNBK"
+      summary: "Tetapkan dan kunci NBK final mapel"
+      description: "Hanya PIC yang ditugaskan pada proyek aktif. Seluruh putaran terencana wajib finalized dan tidak ada putaran aktif. Pilih snapshot finalized dengan nomor/revisi yang sesuai serta alasan. projectVersion harus cocok; keputusan menyimpan statistik snapshot terpilih, mengunci perubahan penilaian mapel, dan menaikkan versi proyek."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/FinalNBKInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/NBKDecision"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/pic/round-plan/extend":
+    post:
+      tags:
+        - "Rounds"
+      x-roles:
+        - "pic_mapel"
+      operationId: "extendRoundPlan"
+      summary: "Tambah satu putaran rencana proyek"
+      description: "Hanya PIC yang ditugaskan, dengan projectVersion terkini. Rencana berlaku untuk seluruh proyek, maksimal 20; ditolak bila salah satu mapel telah memiliki finalNBK. Membuka putaran berikutnya pada mapel yang sudah selesai sesuai rencana sebelumnya; menaikkan versi proyek."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/ExtendRoundPlanInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/Project"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/panelist/connection":
+    post:
+      tags:
+        - "Telemetry"
+      x-roles:
+        - "panelis"
+      operationId: "recordTelemetry"
+      summary: "Catat observasi koneksi dan durasi pengisian panelis"
+      description: "Observasi browser, bukan verifikasi jaringan atau penilaian kualitas manusia. Scope user/proyek/mapel diambil dari sesi, harus panelis aktif yang ditugaskan pada putaran nyata aktif dan revisi yang cocok, dalam periode, tidak dikecualikan, tanpa latihan terbuka/finalNBK. Nilai ringkasan terakhir menimpa catatan scope yang sama; durasi jawaban mentah tidak disimpan. Ambang peringatan koneksi: >=3 sampel dan median >=1500 ms; kecepatan: >=5 isian terakhir berurutan <=5 detik. Monitoring admin/PIC membawa ringkasan ini."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/TelemetryInput"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/PanelistTelemetry"
+        '409':
+          "$ref": "#/components/responses/RevisionConflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/project-workbook/template":
+    get:
+      tags:
+        - "Projects"
+      x-roles:
+        - "admin_super"
+      operationId: "projectWorkbookTemplate"
+      summary: "Unduh template untuk membuat proyek Draft dari Excel"
+      description: "Workbook berisi empat sheet input Proyek, Mapel, Butir, Personel serta Panduan dan Referensi mapel. Tidak terikat proyek existing. Template tidak memuat password."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+      responses:
+        '200':
+          description: "Template XLSX proyek baru"
+          headers:
+            Content-Disposition:
+              schema:
+                type: "string"
+              example: "attachment; filename=template-proyek-standard-setting.xlsx"
+          content:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+              schema:
+                type: "string"
+                format: "binary"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+  "/project-workbook/import":
+    post:
+      tags:
+        - "Projects"
+      x-roles:
+        - "admin_super"
+      operationId: "importProjectWorkbook"
+      summary: "Preview atau buat Draft baru dari workbook lengkap"
+      description: "File .xlsx maksimal 5 MiB dan total 5000 baris input. Sheet/header tepat: Proyek (nama_proyek, deskripsi, tanggal_mulai, tanggal_selesai, pembulatan, kumpulkan_kontak), Mapel (mata_pelajaran, definisi_kandidat), Butir (mata_pelajaran, id_butir), Personel (mata_pelajaran, role, nama, username). Formula, macro, referensi workbook eksternal dan kolom tambahan ditolak. Tanggal teks YYYY-MM-DD termasuk hari selesai di Asia/Jakarta. Semua kesalahan baris dikembalikan dengan HTTP 200 valid=false/applied=false tanpa penyimpanan. apply=false hanya preview; apply=true memvalidasi ulang lalu menyimpan proyek Draft, alokasi butir dan akun baru secara atomik. Gunakan mapel dan ID bank tersedia; tepat satu PIC dan 1–1000 panelis per mapel. Username opsional; kosong dibuat otomatis. Password mengikuti INITIAL_PASSWORD dan wajib diganti. Proyek default 3 putaran, simulasi nonaktif, tanpa aktivasi. Tidak memperbarui proyek/akun existing; kegagalan operasional membatalkan seluruh transaksi."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/ProjectWorkbookPreview"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+      requestBody:
+        required: true
+        content:
+          "multipart/form-data":
+            schema:
+              type: "object"
+              required:
+                - "file"
+              properties:
+                file:
+                  type: "string"
+                  format: "binary"
+                  description: "Workbook .xlsx, maksimal 5 MiB"
+                apply:
+                  type: "string"
+                  enum:
+                    - "false"
+                    - "true"
+                  default: "false"
+                  description: "Preview default; true membuat Draft setelah validasi ulang"
+  "/users/{id}":
+    parameters:
+      - name: "id"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+        description: "ID akun peserta aktif dalam penugasan; bukan username dan bukan akun superadmin"
+    patch:
+      tags:
+        - "Users"
+      x-roles:
+        - "admin_super"
+      operationId: "editParticipantAccount"
+      summary: "Ubah nama dan username peserta"
+      description: "Memerlukan projectVersion terkini; tidak mengubah role/proyek/mapel/password/status. Nama disinkronkan ke slot/roster. Perubahan username menaikkan authVersion sehingga sesi lama ditolak. Proyek completed, akun removed, atau slot tidak sesuai ditolak. Transaksi menaikkan versi proyek."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/ParticipantAccountEdit"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/User"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+    delete:
+      tags:
+        - "Users"
+      x-roles:
+        - "admin_super"
+      operationId: "removeParticipantAccount"
+      summary: "Lepas peserta dari penugasan proyek"
+      description: "Soft remove: akun disimpan untuk histori, active=false, removed=true dan authVersion bertambah. Slot panelis dihapus; slot PIC diganti slot kosong. Roster/readiness proyek diperbarui, versi proyek dinaikkan, respons/snapshot historis tetap tersimpan. Proyek completed dan superadmin ditolak."
+      parameters:
+        - "$ref": "#/components/parameters/SessionId"
+        - "$ref": "#/components/parameters/BrowserOrigin"
+        - "$ref": "#/components/parameters/CSRFToken"
+        - name: "projectVersion"
+          in: "query"
+          required: true
+          schema:
+            type: "integer"
+            minimum: 0
+          description: "Versi proyek dari GET konfigurasi terbaru"
+        - name: "confirmation"
+          in: "query"
+          required: true
+          schema:
+            type: "string"
+            enum:
+              - "HAPUS PESERTA"
+      responses:
+        '200':
+          description: "Hasil operasi"
+          content:
+            "application/json":
+              schema:
+                allOf:
+                  - "$ref": "#/components/schemas/Success"
+                  - type: "object"
+                    properties:
+                      data:
+                        "$ref": "#/components/schemas/RemovedResult"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '422':
+          "$ref": "#/components/responses/Unprocessable"
+        default:
+          "$ref": "#/components/responses/ProtectedError"
+        '404':
+          "$ref": "#/components/responses/NotFound"
 components:
   securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: __Host-ss_session
+      description: Cookie Secure HttpOnly SameSite=Lax produksi; development HTTP memakai ss_session. Semua mutasi memerlukan Origin yang diizinkan dan X-CSRF-Token dari metadata sesi. X-Session-ID mendeteksi metadata tab lama. Bearer dan auth/refresh tidak didukung.
   parameters:
+    BrowserOrigin:
+      name: "Origin"
+      in: "header"
+      required: true
+      schema:
+        type: "string"
+      description: "Origin browser dalam ALLOWED_ORIGINS; wajib pada seluruh mutasi cookie-auth."
+    CSRFToken:
+      name: "X-CSRF-Token"
+      in: "header"
+      required: true
+      schema:
+        type: "string"
+      description: "Token CSRF dari metadata login/session yang sesuai cookie HttpOnly aktif."
+    SessionId:
+      name: "X-Session-ID"
+      in: "header"
+      required: false
+      schema:
+        type: "string"
+      description: "sessionId metadata tab. Jika dikirim dan tidak cocok dengan sesi cookie, server mengembalikan SESSION_CHANGED."
     ProjectId:
       name: id
       in: path
@@ -2091,6 +2718,8 @@ components:
             wizardStep: 1
             subjects: []
             accountsGenerated: false
+            plannedRounds: 3
+            simulationEnabled: false
             collectContactPanelis: false
             roundingPolicy: ceil_1pp
   responses:
@@ -2343,7 +2972,7 @@ components:
           type: boolean
       description: >-
         Tampilan user untuk routing sesi. contactRequired dihitung dari kebijakan/kontak terkini, bukan klaim
-        JWT.
+        sesi server.
     User:
       allOf:
         - $ref: '#/components/schemas/UserView'
@@ -2368,13 +2997,17 @@ components:
     AuthResult:
       type: object
       properties:
-        accessToken:
+        sessionId:
           type: string
-        refreshToken:
+          description: Fingerprint publik, bukan credential cookie
+        csrfToken:
           type: string
-        expiresIn:
+        authVersion:
           type: integer
-          example: 900
+        expiresAt:
+          type: integer
+          format: int64
+          description: Waktu kedaluwarsa absolut, Unix milliseconds
         user:
           $ref: '#/components/schemas/UserView'
     Claims:
@@ -2419,6 +3052,20 @@ components:
         Model body dan response. Pada create Draft sebagian field boleh belum diisi; tidak ada required list
         umum agar tidak mengklaim validasi yang belum ada.
       properties:
+        workflowVersion:
+          type: "integer"
+          minimum: 0
+          readOnly: true
+          description: "0 legacy; proyek baru versi 1 mengharuskan receipt selesai dan penetapan NBK final eksplisit."
+        plannedRounds:
+          type: "integer"
+          minimum: 0
+          maximum: 20
+          default: 3
+          description: "Proyek baru minimal 1 (default 3); 0 legacy tanpa batas rencana. Dapat diubah admin saat Draft; setelah aktif hanya PIC menambah melalui /pic/round-plan/extend."
+        simulationEnabled:
+          type: "boolean"
+          description: "Aktifkan sesi latihan terpisah sebelum penilaian nyata; pengaturan hanya dapat diubah saat Draft."
         id:
           type: string
         version:
@@ -2494,6 +3141,19 @@ components:
     ProjectSubject:
       type: object
       properties:
+        practiceStatus:
+          type: "string"
+          enum:
+            - ""
+            - "open"
+            - "closed"
+          readOnly: true
+          description: "Kosong bila tidak ada latihan; aktivasi proyek simulasi membuka latihan per mapel, PIC menutupnya secara eksplisit."
+        finalNBK:
+          allOf:
+            - "$ref": "#/components/schemas/NBKDecision"
+          readOnly: true
+          description: "Hanya ada setelah PIC mengunci snapshot NBK final mapel."
         code:
           type: string
           example: MAT
@@ -2758,6 +3418,13 @@ components:
     MonitoringPanelist:
       type: object
       properties:
+        submittedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+          description: "Receipt selesai yang valid pada revisi dan versi jawaban saat ini; berbeda dari sekadar seluruh jawaban tersimpan."
+        telemetry:
+          "$ref": "#/components/schemas/PanelistTelemetry"
         id:
           type: string
         name:
@@ -2775,6 +3442,8 @@ components:
             - Menilai
             - Selesai
             - Perlu Perhatian
+            - Perlu Ditinjau
+            - Belum Dikirim
         lastActive:
           type: string
           format: date-time
@@ -2792,6 +3461,11 @@ components:
     Monitoring:
       type: object
       properties:
+        finalNBKChoices:
+          type: array
+          description: Statistik snapshot putaran final yang dapat dipratinjau sebelum penetapan NBK.
+          items:
+            $ref: "#/components/schemas/FinalNBKChoice"
         project:
           $ref: '#/components/schemas/Project'
         subject:
@@ -2817,6 +3491,7 @@ components:
             - $ref: '#/components/schemas/ItemResult'
         canFinalize:
           type: boolean
+          description: Roster efektif lengkap/ditinjau, putaran aktif, latihan ditutup; workflowVersion>=1 juga membutuhkan receipt selesai valid semua panelis.
         canRollback:
           type: boolean
         totalDone:
@@ -3169,6 +3844,14 @@ components:
     PanelistForm:
       type: object
       properties:
+        submittedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+          description: "Timestamp receipt selesai yang masih cocok dengan revisi putaran, kandidat dan versi seluruh jawaban; null jika belum selesai/perlu dikirim ulang."
+        allRoundsDone:
+          type: "boolean"
+          description: "Tidak ada putaran aktif dan seluruh putaran rencana telah selesai; menampilkan hasil putaran terakhir read-only."
         project:
           $ref: '#/components/schemas/Project'
         subject:
@@ -3550,6 +4233,9 @@ components:
     EvaluationView:
       type: object
       properties:
+        message:
+          type: string
+          description: Alasan kuesioner belum dibuka atau sudah ditutup.
         response:
           type: object
           nullable: true
@@ -3681,3 +4367,387 @@ components:
           type: boolean
         exclusionReason:
           type: string
+    RoundScopeInput:
+      type: "object"
+      required:
+        - "roundNumber"
+        - "roundRevision"
+      properties:
+        roundNumber:
+          type: "integer"
+          minimum: 1
+        roundRevision:
+          type: "integer"
+          minimum: 1
+    RoundReceipt:
+      type: "object"
+      required:
+        - "panelistId"
+        - "roundRevision"
+        - "candidateVersion"
+        - "versions"
+        - "submittedAt"
+      properties:
+        panelistId:
+          type: "string"
+        roundRevision:
+          type: "integer"
+          minimum: 1
+        candidateVersion:
+          type: "integer"
+          minimum: 0
+        versions:
+          type: "object"
+          additionalProperties:
+            type: "integer"
+          description: "Peta ID butir ke versi respons yang diselesaikan panelis."
+        submittedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+          description: "Null pada respons reopen. Receipt internal round tidak diekspos sebagai daftar kepada panelis lain."
+    PracticeSession:
+      type: "object"
+      properties:
+        version:
+          type: "integer"
+          minimum: 0
+        startedAt:
+          type: "string"
+          format: "date-time"
+          description: "Zero time sebelum sesi dimulai."
+        finishedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+        answers:
+          type: "object"
+          additionalProperties:
+            "$ref": "#/components/schemas/Answer"
+    PracticeView:
+      type: "object"
+      properties:
+        message:
+          type: string
+          description: Penjelasan ketersediaan latihan di luar periode proyek.
+        enabled:
+          type: "boolean"
+        open:
+          type: "boolean"
+          description: "Proyek aktif, simulasi diaktifkan dan latihan mapel belum ditutup PIC."
+        readOnly:
+          type: "boolean"
+          description: "Latihan ditutup, sudah selesai, timer 10 menit sudah habis, atau di luar periode proyek."
+        expiresAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+        session:
+          "$ref": "#/components/schemas/PracticeSession"
+        items:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/Item"
+          description: "Tiga butir contoh terpisah dari bank dan hasil penilaian nyata."
+    PracticeVersionInput:
+      type: "object"
+      required:
+        - "version"
+      properties:
+        version:
+          type: "integer"
+          minimum: 1
+          description: "Version sesi dari respons latihan terakhir."
+    PracticeAnswerInput:
+      allOf:
+        - "$ref": "#/components/schemas/PracticeVersionInput"
+        - type: "object"
+          required:
+            - "answer"
+          properties:
+            answer:
+              "$ref": "#/components/schemas/Answer"
+    EndPracticeInput:
+      type: "object"
+      required:
+        - "projectVersion"
+        - "confirmation"
+      properties:
+        projectVersion:
+          type: "integer"
+          minimum: 0
+        confirmation:
+          type: "string"
+          enum:
+            - "MULAI PENILAIAN"
+    ExtendRoundPlanInput:
+      type: "object"
+      required:
+        - "projectVersion"
+        - "confirmation"
+      properties:
+        projectVersion:
+          type: "integer"
+          minimum: 0
+        confirmation:
+          type: "string"
+          enum:
+            - "TAMBAH PUTARAN"
+    FinalNBKInput:
+      allOf:
+        - "$ref": "#/components/schemas/RoundScopeInput"
+        - type: "object"
+          required:
+            - "projectVersion"
+            - "reason"
+            - "confirmation"
+          properties:
+            projectVersion:
+              type: "integer"
+              minimum: 0
+            reason:
+              type: "string"
+              minLength: 1
+              maxLength: 1000
+            confirmation:
+              type: "string"
+              enum:
+                - "TETAPKAN NBK FINAL"
+    NBKDecision:
+      type: "object"
+      properties:
+        snapshotId:
+          type: "string"
+        roundNumber:
+          type: "integer"
+          minimum: 1
+        revision:
+          type: "integer"
+          minimum: 1
+        statistics:
+          "$ref": "#/components/schemas/ItemResult"
+        actorId:
+          type: "string"
+        reason:
+          type: "string"
+          maxLength: 1000
+        lockedAt:
+          type: "string"
+          format: "date-time"
+    ParticipantAccountIdentity:
+      type: "object"
+      required:
+        - "name"
+        - "username"
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 200
+        username:
+          type: "string"
+          minLength: 3
+          maxLength: 80
+          pattern: "^[a-z0-9][a-z0-9._-]{2,79}$"
+          description: "Di-trim dan dinormalisasi huruf kecil sebelum validasi; unik secara global."
+    ParticipantAccountInput:
+      allOf:
+        - "$ref": "#/components/schemas/ParticipantAccountIdentity"
+        - type: "object"
+          required:
+            - "projectId"
+            - "projectVersion"
+            - "subjectCode"
+            - "role"
+          properties:
+            projectId:
+              type: "string"
+            projectVersion:
+              type: "integer"
+              minimum: 0
+            subjectCode:
+              type: "string"
+            role:
+              type: "string"
+              enum:
+                - "pic_mapel"
+                - "panelis"
+            slotId:
+              type: "string"
+              description: "Opsional. Bila dikirim harus slot kosong pada mapel/role yang sesuai; bila kosong, isi slot kosong pertama atau buat slot baru."
+    ParticipantAccountEdit:
+      allOf:
+        - "$ref": "#/components/schemas/ParticipantAccountIdentity"
+        - type: "object"
+          required:
+            - "projectVersion"
+          properties:
+            projectVersion:
+              type: "integer"
+              minimum: 0
+    AccountInput:
+      type: "object"
+      properties:
+        slotId:
+          type: "string"
+        name:
+          type: "string"
+        role:
+          type: "string"
+          enum:
+            - "pic_mapel"
+            - "panelis"
+        subjectCode:
+          type: "string"
+        username:
+          type: "string"
+          description: "Opsional, kosong membuat username otomatis pada akun baru."
+    ProjectWorkbookError:
+      allOf:
+        - "$ref": "#/components/schemas/WorkbookError"
+        - type: "object"
+          required:
+            - "sheet"
+          properties:
+            sheet:
+              type: "string"
+              enum:
+                - "Proyek"
+                - "Mapel"
+                - "Butir"
+                - "Personel"
+    ProjectWorkbookPreview:
+      type: "object"
+      required:
+        - "valid"
+        - "applied"
+        - "count"
+        - "errors"
+      properties:
+        valid:
+          type: "boolean"
+        applied:
+          type: "boolean"
+        count:
+          type: "integer"
+          minimum: 0
+          maximum: 5000
+          description: "Jumlah baris data tidak kosong pada empat sheet input."
+        errors:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/ProjectWorkbookError"
+        project:
+          "$ref": "#/components/schemas/Project"
+        accounts:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/AccountInput"
+          description: "Identitas rencana akun; preview tidak memuat ID user/password. Username kosong akan diisi generator saat apply."
+    TelemetryInput:
+      type: "object"
+      required:
+        - "roundNumber"
+        - "roundRevision"
+        - "state"
+      properties:
+        roundNumber:
+          type: "integer"
+          minimum: 1
+          maximum: 20
+        roundRevision:
+          type: "integer"
+          minimum: 1
+        state:
+          type: "string"
+          enum:
+            - "online"
+            - "degraded"
+            - "offline"
+        failures:
+          type: "integer"
+          minimum: 0
+          maximum: 20
+        medianMs:
+          type: "number"
+          minimum: 0
+          maximum: 120000
+        timingSamples:
+          type: "integer"
+          minimum: 0
+          maximum: 20
+        offlineSeconds:
+          type: "number"
+          minimum: 0
+          maximum: 86400
+        answerTimingSeconds:
+          type: "array"
+          maxItems: 20
+          items:
+            type: "number"
+            minimum: 0.2
+            maximum: 86400
+          description: "Sampel durasi isian dalam detik, ringkasan dihitung server; sampel mentah tidak disimpan."
+    PanelistTelemetry:
+      type: "object"
+      description: "Observasi browser terakhir untuk satu panelis/proyek/mapel/nomor/revisi putaran nyata. Bukan penilaian kualitas jawaban atau diagnosis jaringan."
+      properties:
+        userId:
+          type: "string"
+        projectId:
+          type: "string"
+        subjectCode:
+          type: "string"
+        roundNumber:
+          type: "integer"
+        roundRevision:
+          type: "integer"
+        state:
+          type: "string"
+          enum:
+            - "online"
+            - "degraded"
+            - "offline"
+        failures:
+          type: "integer"
+        medianMs:
+          type: "number"
+        timingSamples:
+          type: "integer"
+        offlineSeconds:
+          type: "number"
+        connectionWarning:
+          type: "boolean"
+        answerTimingSamples:
+          type: "integer"
+        medianAnswerSeconds:
+          type: "number"
+        speedWarning:
+          type: "boolean"
+        lastActive:
+          type: "string"
+          format: "date-time"
+    UpdatedResult:
+      type: "object"
+      properties:
+        updated:
+          type: "boolean"
+          example: true
+    RemovedResult:
+      type: "object"
+      properties:
+        removed:
+          type: "boolean"
+          example: true
+
+    FinalNBKChoice:
+      type: object
+      properties:
+        snapshotId:
+          type: string
+        roundNumber:
+          type: integer
+        revision:
+          type: integer
+        statistics:
+          $ref: '#/components/schemas/ItemResult'

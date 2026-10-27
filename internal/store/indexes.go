@@ -30,6 +30,8 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		// PanelistContact.UserID is BSON _id, which MongoDB already indexes uniquely.
 		{"panelist_contacts", []mongo.IndexModel{{Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "subjectCode", Value: 1}}}}},
 		{"evaluations", []mongo.IndexModel{{Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "userId", Value: 1}, {Key: "instrumentVersion", Value: 1}}, Options: options.Index().SetUnique(true)}}},
+		{"panelist_telemetry", []mongo.IndexModel{{Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "subjectCode", Value: 1}, {Key: "roundNumber", Value: 1}, {Key: "roundRevision", Value: 1}}}}},
+		{"practice_sessions", []mongo.IndexModel{{Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "subjectCode", Value: 1}}}}},
 		{"impact_batches", []mongo.IndexModel{{Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "createdAt", Value: -1}}}}},
 		{"impact_scores", []mongo.IndexModel{{Keys: bson.D{{Key: "batchId", Value: 1}, {Key: "subjectCode", Value: 1}, {Key: "participantId", Value: 1}}, Options: options.Index().SetUnique(true)}}},
 	}

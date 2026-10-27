@@ -36,7 +36,7 @@ func (s *Service) AuditContexts(ctx context.Context, events []domain.AuditEvent)
 			loaded[event.ProjectID] = true
 		}
 		p := projects[event.ProjectID]
-		isRound := event.Action == "round_finalize" || event.Action == "round_rollback"
+		isRound := event.Action == "round_finalize" || event.Action == "round_rollback" || event.Action == "panelist_round_submit" || event.Action == "panelist_round_reopen" || event.Action == "nbk_final_lock"
 		if p.ID == "" {
 			context.ProjectName = "Proyek yang sudah dihapus"
 			if event.TargetID == event.ProjectID {
@@ -52,7 +52,7 @@ func (s *Service) AuditContexts(ctx context.Context, events []domain.AuditEvent)
 			context.TargetLabel = "Proyek " + p.Name
 		}
 		for _, subject := range p.Subjects {
-			if subject.Code == event.TargetID && event.Action == "candidate_definition_update" {
+			if subject.Code == event.TargetID && (event.Action == "candidate_definition_update" || event.Action == "practice_end") {
 				context.SubjectName = subject.Name
 				context.TargetLabel = subject.Name + " · Proyek " + p.Name
 				break
@@ -68,6 +68,12 @@ func (s *Service) AuditContexts(ctx context.Context, events []domain.AuditEvent)
 					}
 					for _, r := range rows {
 						rounds[p.ID][r.ID] = r
+						if r.FinalSnapshot != nil {
+							rounds[p.ID][r.FinalSnapshot.ID] = r
+						}
+						for _, snapshot := range r.Snapshots {
+							rounds[p.ID][snapshot.ID] = r
+						}
 					}
 				}
 			}

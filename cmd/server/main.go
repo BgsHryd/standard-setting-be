@@ -62,7 +62,7 @@ func main() {
 	)
 	authService.SetLoginLimiter(redisStore)
 	businessService := service.New(mongoStore, redisStore, initialPassword)
-	app := httpapi.New(httpapi.Config{Auth: authService, Service: businessService, AllowedOrigins: env("CORS_ORIGINS", "http://localhost:5176"), TrustedProxies: strings.FieldsFunc(os.Getenv("TRUSTED_PROXIES"), func(r rune) bool { return r == ',' })})
+	app := httpapi.New(httpapi.Config{Auth: authService, Service: businessService, AllowedOrigins: env("CORS_ORIGINS", "http://localhost:5176"), SecureCookies: strings.EqualFold(env("APP_ENV", "development"), "production"), TrustedProxies: strings.FieldsFunc(os.Getenv("TRUSTED_PROXIES"), func(r rune) bool { return r == ',' })})
 
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- app.Listen(env("HTTP_ADDRESS", ":8080")) }()

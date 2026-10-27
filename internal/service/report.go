@@ -119,6 +119,9 @@ func (s *Service) ProjectReportRevision(ctx context.Context, id string, number, 
 					}
 					continue
 				}
+				if number == 0 && sub.FinalNBK != nil && (round.FinalSnapshot == nil || round.FinalSnapshot.ID != sub.FinalNBK.SnapshotID) {
+					continue
+				}
 				if number == 0 && round.Status != "finalized" {
 					continue
 				}
