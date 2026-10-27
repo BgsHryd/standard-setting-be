@@ -29,7 +29,7 @@ func TestLoginRateLimitRetryAndUnavailableContract(t *testing.T) {
 	s := auth.NewService(users, &testSessions{}, "secret", time.Minute, time.Hour)
 	limiter := &routeLimiter{retry: 6200 * time.Millisecond}
 	s.SetLoginLimiter(limiter)
-	app := New(Config{Auth: s})
+	app := New(Config{Auth: s, AllowedOrigins: "http://localhost:5176"})
 	for _, tc := range []struct {
 		outage bool
 		status int
@@ -40,6 +40,7 @@ func TestLoginRateLimitRetryAndUnavailableContract(t *testing.T) {
 		}
 		req := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(`{"username":"u","password":"secret"}`))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "http://localhost:5176")
 		req.Header.Set("X-Forwarded-For", "203.0.113.5")
 		res, err := app.Test(req)
 		if err != nil {
@@ -72,13 +73,13 @@ func TestAuditRouteAdminOnly(t *testing.T) {
 	for _, role := range []domain.Role{domain.RoleAdminSuper, domain.RolePanelist} {
 		users := &auditRouteUsers{testUsers{domain.User{ID: "u", Username: "u", Name: "Auditor", PasswordHash: string(hash), Active: true, Role: role}}}
 		s := auth.NewService(users, &testSessions{}, "secret", time.Minute, time.Hour)
-		login, err := s.Login(context.Background(), "u", "secret")
+		login, err := s.LoginBrowser(context.Background(), "u", "secret", "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		app := New(Config{Auth: s})
+		app := New(Config{Auth: s, AllowedOrigins: "http://localhost:5176"})
 		req := httptest.NewRequest("GET", "/api/v1/audit-events", nil)
-		req.Header.Set("Authorization", "Bearer "+login.AccessToken)
+		attachTestSession(req, login)
 		res, err := app.Test(req)
 		if err != nil {
 			t.Fatal(err)
@@ -115,9 +116,10 @@ func TestLoginAuditUsesServerGeneratedRequestID(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.MinCost)
 	users := &requestAuditUsers{testUsers: testUsers{domain.User{ID: "u", Username: "u", PasswordHash: string(hash), Active: true}}}
 	s := auth.NewService(users, &testSessions{}, "secret", time.Minute, time.Hour)
-	app := New(Config{Auth: s})
+	app := New(Config{Auth: s, AllowedOrigins: "http://localhost:5176"})
 	req := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(`{"username":"u","password":"secret"}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:5176")
 	req.Header.Set("X-Request-ID", "untrusted-input")
 	res, err := app.Test(req)
 	if err != nil || res.StatusCode != 200 {
@@ -140,31 +142,31 @@ func (u *passwordVersionUsers) UpdatePasswordIfVersion(_ context.Context, id str
 	u.user.MustChangePassword = must
 	return nil
 }
-func TestPasswordChangeRejectsPriorAccessAndRefreshTokens(t *testing.T) {
+func TestPasswordChangeRejectsPriorCookieSession(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("old-password"), bcrypt.MinCost)
 	users := &passwordVersionUsers{testUsers{domain.User{ID: "u", Username: "u", PasswordHash: string(hash), Active: true, Role: domain.RoleAdminSuper}}}
 	s := auth.NewService(users, &testSessions{}, "secret", time.Minute, time.Hour)
-	old, err := s.Login(context.Background(), "u", "old-password")
+	old, err := s.LoginBrowser(context.Background(), "u", "old-password", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, err := s.ChangePasswordSession(context.Background(), "u", 0, "old-password", "new-password")
+	current, err := s.ChangeBrowserPassword(context.Background(), old.CookieToken, "old-password", "new-password")
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := New(Config{Auth: s})
+	app := New(Config{Auth: s, AllowedOrigins: "http://localhost:5176"})
 	for _, tc := range []struct {
-		token  string
+		token  auth.BrowserResult
 		status int
-	}{{old.AccessToken, 401}, {current.AccessToken, 200}} {
+	}{{old, 401}, {current, 200}} {
 		req := httptest.NewRequest("GET", "/api/v1/me", nil)
-		req.Header.Set("Authorization", "Bearer "+tc.token)
+		attachTestSession(req, tc.token)
 		res, err := app.Test(req)
 		if err != nil || res.StatusCode != tc.status {
 			t.Fatalf("access version status=%d expected%d err=%v", res.StatusCode, tc.status, err)
 		}
 	}
-	if _, err = s.Refresh(context.Background(), old.RefreshToken); !errors.Is(err, auth.ErrInvalidSession) {
+	if _, _, err = s.AuthenticateBrowser(context.Background(), old.CookieToken); err == nil {
 		t.Fatal("old refresh revived session", err)
 	}
 }

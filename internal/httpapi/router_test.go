@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
+	"standard-setting/backend/internal/testutil"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +39,10 @@ func (t *testUsers) UpdatePassword(_ context.Context, id string, hash string, mu
 	return nil
 }
 
-type testSessions struct{ values map[string]string }
+type testSessions struct {
+	values map[string]string
+	testutil.BrowserSessions
+}
 
 func (t *testSessions) Save(_ context.Context, token, userID string, _ time.Duration) error {
 	if t.values == nil {
@@ -85,6 +90,7 @@ func TestLoginRejectsMalformedPayload(t *testing.T) {
 	app := newTestApp(t)
 	request := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(`{"username":""}`))
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://localhost:5176")
 
 	response, err := app.Test(request)
 	if err != nil {
@@ -153,4 +159,10 @@ func TestCORSRejectsUnrelatedOrigin(t *testing.T) {
 	if response.Header.Get("Access-Control-Allow-Origin") != "" {
 		t.Fatalf("expected unrelated origin to be rejected, got %q", response.Header.Get("Access-Control-Allow-Origin"))
 	}
+}
+
+func attachTestSession(req *http.Request, state auth.BrowserResult) {
+	req.AddCookie(&http.Cookie{Name: "ss_session", Value: state.CookieToken})
+	req.Header.Set("Origin", "http://localhost:5176")
+	req.Header.Set("X-CSRF-Token", state.CSRFToken)
 }

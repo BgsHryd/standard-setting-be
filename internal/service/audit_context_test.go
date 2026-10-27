@@ -66,3 +66,18 @@ func TestAuditContextDeletedProjectNeverDisplaysInternalID(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkflowAuditTargetsUseSubjectAndSnapshotNames(t *testing.T) {
+	st := &auditContextStore{project: domain.Project{ID: "p", Name: "Proyek QA", Subjects: []domain.ProjectSubject{{Code: "MAT", Name: "Matematika"}}}, rounds: []domain.Round{{ID: "round_internal", ProjectID: "p", SubjectCode: "MAT", Number: 1, FinalSnapshot: &domain.RoundSnapshot{ID: "snapshot_internal"}}}}
+	events := []domain.AuditEvent{{ID: "submit", ProjectID: "p", TargetID: "round_internal", Action: "panelist_round_submit"}, {ID: "reopen", ProjectID: "p", TargetID: "round_internal", Action: "panelist_round_reopen"}, {ID: "nbk", ProjectID: "p", TargetID: "snapshot_internal", Action: "nbk_final_lock"}, {ID: "practice", ProjectID: "p", TargetID: "MAT", Action: "practice_end"}}
+	labels, err := New(st, nil, "").AuditContexts(context.Background(), events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		label := labels[e.ID].TargetLabel
+		if !strings.Contains(label, "Matematika") || !strings.Contains(label, "Proyek QA") || strings.Contains(label, "internal") {
+			t.Fatalf("workflow target missing: %s %+v", e.ID, labels[e.ID])
+		}
+	}
+}

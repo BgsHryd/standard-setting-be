@@ -13,7 +13,7 @@ func TestReportingRoutesRoleGuards(t *testing.T) {
 			t.Run(string(role)+route.method+route.path, func(t *testing.T) {
 				app, _, token := roleApp(t, role, false)
 				req := httptest.NewRequest(route.method, "/api/v1/projects/p/"+route.path, nil)
-				req.Header.Set("Authorization", "Bearer "+token)
+				attachTestSession(req, token)
 				res, err := app.Test(req)
 				if err != nil {
 					t.Fatal(err)
@@ -34,7 +34,7 @@ func TestReportingRoutesRoleGuards(t *testing.T) {
 			t.Run(string(role)+method+"evaluation", func(t *testing.T) {
 				app, _, token := roleApp(t, role, false)
 				req := httptest.NewRequest(method, "/api/v1/panelist/evaluation?projectId=other&userId=other", nil)
-				req.Header.Set("Authorization", "Bearer "+token)
+				attachTestSession(req, token)
 				res, err := app.Test(req)
 				if err != nil {
 					t.Fatal(err)
