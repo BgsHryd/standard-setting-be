@@ -19,6 +19,8 @@ Jangan menimpa `.env` yang telah dikonfigurasi. `main.go` membaca environment pr
 
 Migration `up` menerapkan versi 1–3 secara aditif dan tidak membuat akun. `go run ./cmd/migrate -command seed` menambahkan bootstrap `superadmin` dan `admin_bp3` serta 36 butir contoh, tanpa menimpa dokumen existing. Startup server hanya bootstrap kedua admin secara default; butir demo hanya dibuat bila `SEED_DEMO_ITEMS=true` (default false). Flag false tidak menghapus contoh existing. Password awal mengikuti `INITIAL_PASSWORD`, fallback `12345*`; first login wajib menggantinya. Bootstrap tidak mereset password/status existing dan mengikuti username case-insensitive. Redis tidak memerlukan migration schema.
 
+Excel akun langkah 4 mewajibkan kolom `password` untuk akun baru; akun tersebut dapat login tanpa ganti password pertama. Akun existing tidak diubah. `INITIAL_PASSWORD` tetap berlaku untuk pembuatan otomatis dan reset manual; nilai baru dipakai setelah environment dimuat ulang dan backend dimulai ulang, tanpa mengubah akun existing secara otomatis. Lihat [panduan password Excel](docs/EXCEL-ACCOUNT-PASSWORD-2026-10-28.md).
+
 ## Dokumen
 
 - [Migrasi MongoDB/Redis ke VM terpisah dan akun admin_bp3](../output/deployment/PANDUAN-MIGRASI-MONGODB-REDIS-VM-TERPISAH-2026-10-23.md)

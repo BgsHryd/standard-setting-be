@@ -53,7 +53,7 @@ go run ./cmd/migrate -command seed
 | `-uri` / MONGO_URI | mongodb://localhost:27017 | URI target; kredensial dari environment privat, tidak dicetak |
 | `-database` / MONGO_DATABASE | standard-setting | CLI menyebut nama target di output |
 | `-timeout` | 30s | Deadline satu eksekusi, positif |
-| INITIAL_PASSWORD | 12345* lokal | Hanya dipakai seed/bootstrap, bukan up/status |
+| INITIAL_PASSWORD | 12345* lokal | Seed/bootstrap akun yang belum ada, pembuatan akun otomatis, dan reset password manual; bukan up/status. Tidak mengubah akun existing otomatis. Excel langkah 4 memakai password wajib yang diisi admin. |
 | SEED_DEMO_ITEMS | false | Hanya mengontrol butir demo pada startup server |
 
 Contoh target QA eksplisit, memakai DB scratch yang dipilih operator:

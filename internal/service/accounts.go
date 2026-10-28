@@ -10,6 +10,7 @@ import (
 	"standard-setting/backend/internal/domain"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type AccountInput struct {
@@ -18,6 +19,8 @@ type AccountInput struct {
 	Role        domain.Role `json:"role"`
 	SubjectCode string      `json:"subjectCode"`
 	Username    string      `json:"username,omitempty"`
+	// Only the workbook parser can provide this transient credential. It is never serialized.
+	password string
 }
 type AccountRow struct {
 	UserID      string      `json:"userId"`
@@ -70,6 +73,16 @@ func (s *Service) AccountRows(ctx context.Context, id string) ([]AccountRow, err
 }
 
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,79}$`)
+
+func validateWorkbookPassword(password string) error {
+	if strings.TrimSpace(password) == "" {
+		return errors.New("password wajib diisi untuk akun baru")
+	}
+	if utf8.RuneCountInString(password) < 6 || len(password) > 72 {
+		return errors.New("password minimal 6 karakter dan maksimal 72 byte")
+	}
+	return nil
+}
 
 func (s *Service) GenerateAccounts(ctx context.Context, projectID string, inputs []AccountInput) ([]domain.User, error) {
 	result := []domain.User{}
@@ -136,6 +149,9 @@ func (s *Service) GenerateAccounts(ctx context.Context, projectID string, inputs
 				}
 				var u domain.User
 				if slot.UserID != "" {
+					if input.password != "" {
+						return errors.New("password akun yang sudah dibuat tidak dapat diubah melalui Excel")
+					}
 					u, err = s.store.FindByID(tx, slot.UserID)
 					if err != nil {
 						return err
@@ -175,11 +191,20 @@ func (s *Service) GenerateAccounts(ctx context.Context, projectID string, inputs
 					if !errors.Is(findErr, mongo.ErrNoDocuments) {
 						return findErr
 					}
-					hash, err := auth.HashPassword(s.initialPassword)
+					password := s.initialPassword
+					mustChangePassword := true
+					if input.password != "" {
+						if err := validateWorkbookPassword(input.password); err != nil {
+							return err
+						}
+						password = input.password
+						mustChangePassword = false
+					}
+					hash, err := auth.HashPassword(password)
 					if err != nil {
 						return err
 					}
-					u = domain.User{ID: newID("user"), Username: username, PasswordHash: hash, MustChangePassword: true, Active: true, CreatedAt: now}
+					u = domain.User{ID: newID("user"), Username: username, PasswordHash: hash, MustChangePassword: mustChangePassword, Active: true, CreatedAt: now}
 					slot.UserID = u.ID
 				}
 				if seenUsername[u.Username] {

@@ -18,7 +18,11 @@ import (
 const workbookLimit = 5 * 1024 * 1024
 const workbookRows = 5000
 
-var workbookHeaders = map[int][]string{2: {"mata_pelajaran", "id_butir"}, 3: {"mata_pelajaran", "role", "nama"}, 4: {"mata_pelajaran", "role", "nama", "username"}}
+var workbookHeaders = map[int][]string{
+	2: {"mata_pelajaran", "id_butir"},
+	3: {"mata_pelajaran", "role", "nama"},
+	4: {"mata_pelajaran", "role", "nama", "username", "password"},
+}
 
 type WorkbookError struct {
 	Row     int    `json:"row"`
@@ -175,11 +179,15 @@ func (s *Service) ImportWorkbook(ctx context.Context, id string, step int, data 
 			if len(row) > len(headers) {
 				problem(n+1, "header", "", "kolom tambahan tidak diperbolehkan")
 			}
-			for col := range row {
+			for col := 0; col < max(len(row), len(headers)); col++ {
 				cell, _ := excelize.CoordinatesToCellName(col+1, n+1)
 				formula, _ := f.GetCellFormula("Data", cell)
 				if formula != "" {
-					problem(n+1, headers[min(col, len(headers)-1)], formula, "formula tidak diperbolehkan")
+					column := headers[min(col, len(headers)-1)]
+					if column == "password" {
+						formula = ""
+					}
+					problem(n+1, column, formula, "formula tidak diperbolehkan")
 				}
 			}
 		}
@@ -316,6 +324,18 @@ func (s *Service) ImportWorkbook(ctx context.Context, id string, step int, data 
 				}
 				if step == 4 {
 					username := strings.ToLower(value(row, 3))
+					// Passwords are literal text: preserve intentional leading/trailing spaces.
+					password := ""
+					if len(row) > 4 {
+						password = row[4]
+					}
+					if expected.UserID == "" {
+						if err := validateWorkbookPassword(password); err != nil {
+							problem(n, "password", "", err.Error())
+						}
+					} else if password != "" {
+						problem(n, "password", "", "kosongkan password akun yang sudah dibuat; gunakan reset password untuk mengubahnya")
+					}
 					if name != expected.Name {
 						problem(n, "nama", name, "nama prefill tidak boleh diubah pada langkah akun")
 					}
@@ -335,7 +355,7 @@ func (s *Service) ImportWorkbook(ctx context.Context, id string, step int, data 
 					} else if findErr != nil && !errors.Is(findErr, mongo.ErrNoDocuments) {
 						return findErr
 					}
-					result.Accounts = append(result.Accounts, AccountInput{SlotID: expected.SlotID, Name: name, Role: expected.Role, SubjectCode: expected.SubjectCode, Username: username})
+					result.Accounts = append(result.Accounts, AccountInput{SlotID: expected.SlotID, Name: name, Role: expected.Role, SubjectCode: expected.SubjectCode, Username: username, password: password})
 				}
 			}
 		}

@@ -648,7 +648,10 @@ paths:
         - admin_super
       operationId: template
       summary: Unduh template XLSX terikat proyek, langkah dan version
-      description: Langkah 3–4 memerlukan kebutuhan panelis lengkap. Kolom prefill diverifikasi kembali saat impor.
+      description: >-
+        Langkah 3–4 memerlukan kebutuhan panelis lengkap. Kolom prefill diverifikasi kembali saat impor.
+        Langkah 4 memiliki kolom mata_pelajaran, role, nama, username, password. Password selalu kosong
+        pada template; wajib diisi hanya untuk akun baru dan harus tetap kosong untuk akun existing.
       responses:
         '200':
           description: Workbook XLSX
@@ -683,6 +686,11 @@ paths:
       description: >-
         Maksimal 5 MB dan 5000 baris; formula/macro/external links ditolak. valid=false mengembalikan semua
         error baris tanpa mutasi. apply=true memeriksa ulang lalu menyimpan transaksi.
+        Pada langkah 4, username dan password wajib untuk akun baru. Password minimal 6 karakter,
+        maksimal 72 byte dan tidak boleh hanya spasi; spasi tepi dipertahankan. Satu password kosong
+        atau invalid menolak seluruh file. Akun baru memakai password tersebut tanpa kewajiban ganti
+        password pertama; kebutuhan kontak proyek tetap berlaku. Password akun existing harus kosong
+        dan kredensialnya dipertahankan. Password tidak dikembalikan pada preview maupun error.
       requestBody:
         required: true
         content:

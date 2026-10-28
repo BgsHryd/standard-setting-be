@@ -119,6 +119,7 @@ func New(config Config) *App {
 	handler.registerWorkflowRoutes(pic, panelist)
 	handler.registerAccountManagementRoutes(admin, adminRole)
 	handler.registerProjectWorkbookRoutes(admin, adminRole)
+	handler.registerCatalogWorkbookRoutes(admin, adminRole)
 	handler.registerTelemetryRoutes(pic, panelist)
 	handler.registerReportingRoutes(admin, adminRole, panelist)
 	handler.registerSecurityRoutes(admin, adminRole)
