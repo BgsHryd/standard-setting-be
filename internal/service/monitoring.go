@@ -114,6 +114,18 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	if err != nil {
 		return Monitoring{}, err
 	}
+	snapshot := finalMonitoringSnapshot(round)
+	if snapshot != nil {
+		subject.CandidateVersion = snapshot.CandidateVersion
+		subject.CandidateDefinition = snapshot.CandidateDefinition
+		included := []domain.User{}
+		for _, user := range panelists {
+			if contains(snapshot.PanelistIDs, user.ID) {
+				included = append(included, user)
+			}
+		}
+		panelists = included
+	}
 	items, err := s.store.ListItems(ctx, subjectCode, projectID, false)
 	if err != nil {
 		return Monitoring{}, err
@@ -133,6 +145,9 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	rows, err := s.store.ListSubmissions(ctx, projectID, subjectCode, round.Number, "")
 	if err != nil {
 		return Monitoring{}, err
+	}
+	if snapshot != nil {
+		rows = snapshot.Submissions
 	}
 	byUser := map[string]map[string]domain.Submission{}
 	for _, row := range rows {
@@ -163,9 +178,21 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	if err != nil {
 		return Monitoring{}, err
 	}
+	discussionNotes := []domain.DiscussionNote{}
+	if st, ok := s.store.(discussionNoteStore); ok {
+		discussionNotes, err = st.ListDiscussionNotes(ctx, "", projectID, subjectCode, round.Number, domain.RoundRevision(round))
+		if err != nil {
+			return Monitoring{}, err
+		}
+	}
 	scores := []float64{}
 	for _, user := range panelists {
 		responses := byUser[user.ID]
+		for _, note := range discussionNotes {
+			if note.UserID == user.ID && note.Text != "" && contains(subject.ItemIDs, note.ItemID) {
+				result.Notes = append(result.Notes, MonitoringNote{user.ID, user.Name, note.ItemID, "Catatan diskusi: " + note.Text, note.UpdatedAt})
+			}
+		}
 		panelist := MonitoringPanelist{ID: user.ID, Name: user.Name, Username: user.Username, Done: 0, Total: len(subject.ItemIDs), Status: "Belum Menilai"}
 		if row, ok := telemetry[user.ID]; ok {
 			panelist.Telemetry = &row
@@ -271,6 +298,25 @@ func (s *Service) PreviewPanelist(ctx context.Context, projectID, subjectCode st
 	u, err := s.store.FindByID(ctx, panelistID)
 	if err != nil || !u.Active || u.Removed || u.Role != domain.RolePanelist || u.ProjectID != p.ID || u.SubjectCode != subjectCode || !contains(subject.PanelistUserIDs, panelistID) {
 		return nil, errors.New("panelis tidak ditugaskan pada proyek/mapel ini")
+	}
+	history, err := s.store.ListRounds(ctx, projectID, subjectCode)
+	if err != nil {
+		return nil, err
+	}
+	for _, historical := range history {
+		if historical.Number != round {
+			continue
+		}
+		if snapshot := finalMonitoringSnapshot(historical); snapshot != nil {
+			rows := []domain.Submission{}
+			for _, row := range snapshot.Submissions {
+				if row.PanelistID == panelistID {
+					rows = append(rows, row)
+				}
+			}
+			return rows, nil
+		}
+		break
 	}
 	return s.store.ListSubmissions(ctx, projectID, subjectCode, round, panelistID)
 }

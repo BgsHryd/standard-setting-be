@@ -161,6 +161,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 				}
 			}
 			sub.PracticeStatus, sub.FinalNBK = previous.PracticeStatus, previous.FinalNBK
+			sub.ShowKJ, sub.ShowMeasure = previous.ShowKJ, previous.ShowMeasure
 			if old.Status == domain.ProjectActive && previous.Code == "" && p.SimulationEnabled {
 				sub.PracticeStatus = "open"
 			}

@@ -2,6 +2,14 @@ package domain
 
 import "time"
 
+// RoundStart records a panelist's entry into this revision without creating answers.
+type RoundStart struct {
+	PanelistID    string    `json:"-" bson:"panelistId"`
+	RoundNumber   int       `json:"roundNumber" bson:"roundNumber"`
+	RoundRevision int       `json:"roundRevision" bson:"roundRevision"`
+	StartedAt     time.Time `json:"startedAt" bson:"startedAt"`
+}
+
 // RoundReceipt binds a deliberate finish action to the exact saved answer set.
 type RoundReceipt struct {
 	PanelistID       string         `json:"panelistId" bson:"panelistId"`

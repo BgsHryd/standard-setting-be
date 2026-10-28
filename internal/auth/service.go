@@ -122,6 +122,12 @@ func (s *Service) loginUser(ctx context.Context, username, password, ip string) 
 			return domain.User{}, ErrSecurityUnavailable
 		}
 	}
+	if err := s.checkLoginPeriod(ctx, user, time.Now().UTC()); err != nil {
+		if auditErr := s.audit(ctx, user, "auth.login", "failure"); auditErr != nil {
+			return domain.User{}, auditErr
+		}
+		return domain.User{}, err
+	}
 	if tracker, ok := s.users.(interface {
 		UpdateLastLogin(context.Context, string, time.Time) error
 	}); ok {

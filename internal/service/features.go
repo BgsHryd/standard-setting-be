@@ -305,10 +305,7 @@ func (s *Service) SaveSubmissionWithOptions(ctx context.Context, userID, name, p
 		if err = s.store.TouchRound(tx, r); err != nil {
 			return err
 		}
-		review := old.ReviewRevision
-		if revision == 1 || input.Reviewed {
-			review = revision
-		}
+		review := revision
 		id := old.ID
 		if id == "" {
 			id = newID("submission")
@@ -344,21 +341,22 @@ func (s *Service) ReviewSubmission(ctx context.Context, user, project, subject s
 }
 
 type ItemFeedback struct {
-	ItemID      string    `json:"itemId"`
-	RoundNumber int       `json:"roundNumber"`
-	Revision    int       `json:"revision"`
-	N           int       `json:"n"`
-	Median      float64   `json:"median"`
-	Minimum     float64   `json:"minimum"`
-	Maximum     float64   `json:"maximum"`
-	Values      []float64 `json:"values"`
-	OwnValue    *float64  `json:"ownValue,omitempty"`
-	SmallPanel  bool      `json:"smallPanel"`
+	StandardDeviation float64   `json:"standardDeviation"`
+	ItemID            string    `json:"itemId"`
+	RoundNumber       int       `json:"roundNumber"`
+	Revision          int       `json:"revision"`
+	N                 int       `json:"n"`
+	Median            float64   `json:"median"`
+	Minimum           float64   `json:"minimum"`
+	Maximum           float64   `json:"maximum"`
+	Values            []float64 `json:"values"`
+	OwnValue          *float64  `json:"ownValue,omitempty"`
+	SmallPanel        bool      `json:"smallPanel"`
 }
 
 func snapshotFeedback(snap domain.RoundSnapshot, itemID, userID string) ItemFeedback {
 	stats := snap.ItemStatistics[itemID]
-	f := ItemFeedback{ItemID: itemID, RoundNumber: snap.RoundNumber, Revision: snap.Revision, N: stats.PanelistCount, Median: stats.Median, Minimum: stats.Minimum, Maximum: stats.Maximum, Values: []float64{}, SmallPanel: stats.PanelistCount < 3}
+	f := ItemFeedback{ItemID: itemID, RoundNumber: snap.RoundNumber, Revision: snap.Revision, N: stats.PanelistCount, StandardDeviation: stats.StandardDev, Median: stats.Median, Minimum: stats.Minimum, Maximum: stats.Maximum, Values: []float64{}, SmallPanel: stats.PanelistCount < 3}
 	for _, row := range snap.Submissions {
 		if row.ItemID != itemID || !contains(snap.PanelistIDs, row.PanelistID) {
 			continue

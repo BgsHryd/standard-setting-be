@@ -109,6 +109,7 @@ func New(config Config) *App {
 
 	pic := protected.Group("/pic", handler.requireRoles(domain.RolePICMapel))
 	pic.Get("/monitoring", handler.picMonitoring)
+	pic.Put("/panelist-display", handler.setPanelistDisplay)
 	pic.Get("/panelists/:panelistId/submissions", handler.previewPanelist)
 	pic.Post("/rounds/:action", handler.roundAction)
 
@@ -260,6 +261,9 @@ func (h *Handler) me(c *fiber.Ctx) error {
 	return success(c, auth.UserView{ID: u.ID, Username: u.Username, Name: u.Name, Role: u.Role, ProjectID: u.ProjectID, ProjectName: u.ProjectName, SubjectCode: u.SubjectCode, MustChangePassword: u.MustChangePassword, ContactRequired: required})
 }
 func authError(c *fiber.Ctx, err error, fallback int) error {
+	if errors.Is(err, auth.ErrOutsideAssessmentPeriod) {
+		return c.Status(http.StatusForbidden).JSON(fiber.Map{"status": "error", "code": "OUTSIDE_ASSESSMENT_PERIOD", "message": err.Error()})
+	}
 	if errors.Is(err, auth.ErrSessionReplaced) {
 		return c.Status(401).JSON(fiber.Map{"status": "error", "code": "SESSION_REPLACED", "message": "Anda telah login di perangkat lain"})
 	}
@@ -417,7 +421,7 @@ func (h *Handler) listItems(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return success(c, items)
+	return success(c, adminItems(items))
 }
 
 func (h *Handler) saveItems(c *fiber.Ctx) error {
@@ -425,15 +429,20 @@ func (h *Handler) saveItems(c *fiber.Ctx) error {
 		return err
 	}
 	var request struct {
-		Items []domain.Item `json:"items"`
+		Items []catalogItemDTO `json:"items"`
 	}
 	if err := c.BodyParser(&request); err != nil {
 		return errorResponse(c, 422, "daftar ID butir tidak valid")
 	}
-	if err := h.service.UpsertItems(c.UserContext(), request.Items); err != nil {
+	items := make([]domain.Item, len(request.Items))
+	for i, row := range request.Items {
+		items[i] = row.Item
+		items[i].KJ, items[i].Measure = row.KJ, row.Measure
+	}
+	if err := h.service.UpsertItems(c.UserContext(), items); err != nil {
 		return errorResponse(c, 409, err.Error())
 	}
-	return success(c, request.Items)
+	return success(c, adminItems(items))
 }
 
 func (h *Handler) itemResult(c *fiber.Ctx) error {
@@ -451,7 +460,11 @@ func (h *Handler) adminMonitoring(c *fiber.Ctx) error {
 	if err := h.requireService(c); err != nil {
 		return err
 	}
-	result, err := h.service.Monitoring(c.UserContext(), c.Params("id"), c.Query("subjectCode"))
+	round, parseErr := strconv.Atoi(c.Query("round", "0"))
+	if parseErr != nil || round < 0 {
+		return errorResponse(c, 422, "nomor putaran tidak valid")
+	}
+	result, err := h.service.MonitoringAtRound(c.UserContext(), c.Params("id"), c.Query("subjectCode"), round)
 	if err != nil {
 		return errorResponse(c, 404, err.Error())
 	}
@@ -524,7 +537,7 @@ func (h *Handler) itemDetail(c *fiber.Ctx) error {
 	if err != nil {
 		return errorResponse(c, 404, "ID butir tidak ditemukan")
 	}
-	return success(c, item)
+	return success(c, adminItem(item))
 }
 
 func (h *Handler) adminPreviewPanelist(c *fiber.Ctx) error {
@@ -551,7 +564,7 @@ func (h *Handler) panelistForm(c *fiber.Ctx) error {
 	if err != nil {
 		return coreError(c, err, 404)
 	}
-	return success(c, result)
+	return success(c, panelistFormView(result))
 }
 
 func (h *Handler) saveSubmission(c *fiber.Ctx) error {

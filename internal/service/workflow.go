@@ -91,7 +91,7 @@ func (s *Service) SubmitPanelistRound(ctx context.Context, user string, number, 
 					}
 				}
 				if !found {
-					return errors.New("lengkapi dan tinjau seluruh jawaban sebelum menyelesaikan putaran")
+					return errors.New("lengkapi dan simpan seluruh jawaban sesuai definisi kandidat sebelum menyelesaikan putaran")
 				}
 			}
 			if old := receiptFor(r, user, sub.CandidateVersion); receiptMatches(old, rows, sub.ItemIDs) {

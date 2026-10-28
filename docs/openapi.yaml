@@ -1022,9 +1022,18 @@ paths:
       summary: Monitoring per proyek dan mapel
       description: >-
         FE query halaman subject dipetakan ke subjectCode API. Polling 10 detik. Membaca putaran aktif atau
-        putaran finalized terakhir jika rencana telah selesai; tidak membuat putaran saat GET.
+        putaran finalized terakhir jika rencana telah selesai. round positif memilih putaran historis
+        atau putaran rencana yang belum dimulai (status future, data kosong). Putaran selesai memakai
+        respons, konteks kandidat dan statistik snapshot final bila tersedia; tidak membuat putaran saat GET.
       parameters:
         - $ref: '#/components/parameters/SubjectQuery'
+        - name: round
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Nol/diabaikan mengikuti putaran terkini; angka positif mempertahankan pilihan putaran.
       responses:
         '200':
           $ref: '#/components/responses/MonitoringResponse'
@@ -1054,6 +1063,59 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/ProtectedError'
+  /pic/panelist-display:
+    put:
+      tags:
+        - Monitoring
+      x-roles:
+        - pic_mapel
+      operationId: setPanelistDisplay
+      summary: Atur tampilan KJ dan Measure untuk panelis mapel sendiri
+      description: >-
+        Scope berasal dari PIC aktif yang masih ditugaskan. Kedua toggle default false dan disimpan
+        per proyek-mapel. projectVersion harus terkini; versi stale 409. Proyek selesai terkunci.
+        Update atomik menaikkan versi proyek serta mencatat audit, tanpa mengubah jawaban atau putaran.
+        Panelis menerima perubahan pada polling borang berikutnya. Metadata OFF tidak dikirim pada items borang.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [showKJ, showMeasure, projectVersion]
+              properties:
+                showKJ:
+                  type: boolean
+                showMeasure:
+                  type: boolean
+                projectVersion:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Konfigurasi tersimpan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          showKJ:
+                            type: boolean
+                          showMeasure:
+                            type: boolean
+                          projectVersion:
+                            type: integer
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
         default:
           $ref: '#/components/responses/ProtectedError'
   /pic/panelists/{panelistId}/submissions:
@@ -1099,12 +1161,12 @@ paths:
         finalize menyimpan snapshot n finalized dan membuat n+1 active hanya jika belum mencapai plannedRounds
         (atau plannedRounds=0 legacy). Pada putaran rencana terakhir, respons tetap round finalized tanpa
         membuat putaran tambahan. rollback putaran aktif mengaktifkan n-1 setelah n rolled_back; n=1 aktif ditolak.
-        Bila seluruh putaran terencana sudah final dan NBK belum dikunci, rollback membuka kembali putaran final terakhir (termasuk putaran 1), menambah revisi dan mewajibkan tinjau ulang.
+        Bila seluruh putaran terencana sudah final dan NBK belum dikunci, rollback membuka kembali putaran final terakhir (termasuk putaran 1), menambah revisi dan membatalkan receipt selesai lama. Jawaban valid tetap dipakai tanpa konfirmasi per butir.
         Finalisasi wajib semua panelis/item lengkap; workflowVersion>=1 juga mengharuskan receipt selesai
         valid setiap panelis efektif. Latihan terbuka dan finalNBK terkunci menolak aksi putaran.
         RoundNumber harus sama dengan putaran aktif untuk mencegah aksi stale.
         Round yang sudah ada diaktifkan kembali tanpa duplikasi nomor/ID.
-         Kirim roundRevision saat ini; omission hanya kompatibel pada revisi1. Rollback menaikkan revisi yang dibuka kembali dan respons harus ditinjau ulang. Snapshot final immutable; finalisasi ulang menambah arsip revisi baru.
+         Kirim roundRevision saat ini; omission hanya kompatibel pada revisi1. Setelah rollback, panelis mengirim ulang penyelesaian putaran; antrean revisi lama tetap ditolak. Snapshot final immutable; finalisasi ulang menambah arsip revisi baru.
       parameters:
         - name: action
           in: path
@@ -1208,8 +1270,8 @@ paths:
         Simpan jawaban valid dan catatan pada scope user/round aktif. Periode start inklusif/end eksklusif,
         gate kontak, penugasan, versi kandidat, versi respons dan roundRevision dicek server. Antrean
         terlambat/stale ditolak. Receipt selesai, latihan terbuka, dan finalNBK mengunci perubahan jawaban.
-        reviewed=true mengakui jawaban pada revisi rollback; hanya ACK server
-        menandai tersimpan.
+        Field reviewed dipertahankan untuk kompatibilitas; rollback tidak memerlukan konfirmasi
+        per butir. Hanya ACK server menandai tersimpan.
       parameters:
         - name: itemId
           in: path
@@ -1610,7 +1672,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ReviewInput'
       description: >-
-        Mengakui jawaban valid yang sudah ada, termasuk setelah rollback; jawaban/catatan dipertahankan.
+        Endpoint kompatibilitas untuk menyimpan ulang jawaban valid; tidak wajib dipanggil setelah rollback. Jawaban/catatan dipertahankan.
         Memakai periode/gate kontak/versi yang sama dengan simpan. Kirim candidateVersion dari subject;
         featureVersion1 menolak versi kandidat yang hilang/stale.
   /projects/{id}/reports:
@@ -2113,6 +2175,100 @@ paths:
       description: >-
         Maksimal1000 event terbaru, urut createdAt descending. Filter project/action tetap berlaku saat
         pencarian nama. Retensi diatur operasi; tidak ada TTL penghapusan otomatis.
+  "/panelist/rounds/start":
+    post:
+      tags: [Rounds]
+      x-roles: [panelis]
+      operationId: startPanelistRound
+      summary: Mulai mengisi putaran setelah diskusi hasil
+      description: >-
+        Scope akun sendiri; putaran aktif, revisi, periode, kontak, status akun dan pengecualian diperiksa.
+        Idempoten per panelis/revisi. Tidak menciptakan jawaban atau membuka putaran PIC.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoundScopeInput'
+      responses:
+        '200':
+          description: Waktu mulai yang dipertahankan pada permintaan ulang
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RoundStart'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/ContactRequired'
+        default:
+          $ref: '#/components/responses/ProtectedError'
+  "/panelist/rounds/notes/{itemId}":
+    put:
+      tags: [Rounds]
+      x-roles: [panelis]
+      operationId: saveDiscussionNote
+      summary: Simpan catatan diskusi tanpa mengubah penilaian
+      description: >-
+        Hanya akun sendiri, butir teralokasi, putaran aktif dan revisi saat ini, setelah ada hasil final sebelumnya.
+        Version 0 membuat catatan; berikutnya wajib versi tersimpan. Teks kosong menghapus isi tanpa menghapus versi.
+        Catatan terlihat oleh PIC, tidak meningkatkan progres jawaban. Tidak dapat diubah setelah submit/finalisasi.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/CSRFToken'
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/RoundScopeInput'
+                - type: object
+                  required: [version, text]
+                  properties:
+                    version:
+                      type: integer
+                      minimum: 0
+                    text:
+                      type: string
+                      maxLength: 1000
+      responses:
+        '200':
+          description: Catatan milik panelis pemanggil
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DiscussionNote'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '428':
+          $ref: '#/components/responses/ContactRequired'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   "/panelist/rounds/submit":
     post:
       tags:
@@ -2121,7 +2277,7 @@ paths:
         - "panelis"
       operationId: "submitPanelistRound"
       summary: "Selesaikan putaran panelis secara eksplisit"
-      description: "Seluruh butir wajib tersimpan, valid, ditinjau pada revisi putaran dan versi kandidat saat ini. Receipt mengikat versi setiap respons; permintaan identik bersifat idempoten. Borang menjadi read-only setelah selesai. Scope hanya panelis pemanggil; penilaian nyata aktif, periode dan kontak wajib memenuhi kebijakan."
+      description: "Seluruh butir wajib tersimpan, valid, dan sesuai versi kandidat saat ini. Jawaban tersimpan sebelum rollback dapat dipakai tanpa konfirmasi tiap butir; request penyelesaian tetap wajib memakai revisi putaran aktif. Receipt mengikat versi setiap respons; permintaan identik bersifat idempoten. Borang menjadi read-only setelah selesai. Scope hanya panelis pemanggil; penilaian nyata aktif, periode dan kontak wajib memenuhi kebijakan."
       parameters:
         - "$ref": "#/components/parameters/SessionId"
         - "$ref": "#/components/parameters/BrowserOrigin"
@@ -3149,6 +3305,16 @@ components:
     ProjectSubject:
       type: object
       properties:
+        showKJ:
+          type: boolean
+          default: false
+          readOnly: true
+          description: Diatur melalui konfigurasi PIC, dipertahankan saat save proyek admin.
+        showMeasure:
+          type: boolean
+          default: false
+          readOnly: true
+          description: Diatur melalui konfigurasi PIC, dipertahankan saat save proyek admin.
         practiceStatus:
           type: "string"
           enum:
@@ -3413,7 +3579,7 @@ components:
         reviewRevision:
           type: integer
           minimum: 0
-          description: Revisi terakhir yang diakui eksplisit; legacy dianggap reviewed hanya revisi1.
+          description: Metadata kompatibilitas revisi saat jawaban terakhir disimpan; bukan syarat konfirmasi per butir setelah rollback.
         candidateVersion:
           type: integer
           minimum: 0
@@ -3706,7 +3872,7 @@ components:
       description: >-
         Client baru selalu mengirim roundRevision, version, candidateVersion dan idempotencyKey. Omission
         revisi hanya kompatibel sebelum revisi2; versi harus cocok. Kunci sama dengan payload sama bersifat
-        idempoten; payload berbeda mendapat409. reviewed=true mengakui rollback.
+        idempoten; payload berbeda mendapat409. Field reviewed bersifat kompatibilitas, tanpa konfirmasi per butir.
     ReviewInput:
       type: object
       properties:
@@ -3746,6 +3912,9 @@ components:
         'n':
           type: integer
           minimum: 0
+        standardDeviation:
+          type: number
+          description: Simpangan baku populasi dalam poin persentase, dari snapshot final.
         median:
           type: number
           format: double
@@ -3849,9 +4018,105 @@ components:
           type: boolean
         valid:
           type: boolean
+    PanelistItem:
+      allOf:
+        - $ref: '#/components/schemas/Item'
+        - type: object
+          properties:
+            kj:
+              type: string
+              description: Hanya dikirim ketika subject.showKJ=true; string kosong berarti belum diisi.
+            measure:
+              type: number
+              description: Hanya dikirim ketika subject.showMeasure=true dan nilai tersedia; nol/negatif valid.
+    RoundStart:
+      type: object
+      required: [roundNumber, roundRevision, startedAt]
+      properties:
+        roundNumber:
+          type: integer
+        roundRevision:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+    DiscussionNote:
+      type: object
+      properties:
+        itemId:
+          type: string
+        roundNumber:
+          type: integer
+        roundRevision:
+          type: integer
+        version:
+          type: integer
+        text:
+          type: string
+          maxLength: 1000
+        updatedAt:
+          type: string
+          format: date-time
+    RoundOutcome:
+      type: object
+      description: Agregat snapshot final aktif; tanpa roster, ID panelis atau respons mentah.
+      properties:
+        roundNumber:
+          type: integer
+        revision:
+          type: integer
+        finalizedAt:
+          type: string
+          format: date-time
+        panelistCount:
+          type: integer
+        nbkPercent:
+          type: number
+        roundingPolicy:
+          type: string
+        maxScore:
+          type: number
+          nullable: true
+        nbkScore:
+          type: number
+          nullable: true
+        projectionPercent:
+          type: number
+          nullable: true
+          description: Null tanpa batch skor peserta yang cocok dengan subject dan snapshot final ini.
+        projectionCount:
+          type: integer
+    RoundReview:
+      allOf:
+        - $ref: '#/components/schemas/RoundOutcome'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ItemFeedback'
     PanelistForm:
       type: object
       properties:
+        roundReview:
+          allOf:
+            - $ref: '#/components/schemas/RoundReview'
+          nullable: true
+        roundOutcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoundOutcome'
+        roundStartRequired:
+          type: boolean
+          description: Gate hasil FE pada putaran berikutnya yang belum dimulai/dinilai; false pada rollback, latihan, putaran pertama dan baca saja.
+        roundStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+        discussionNotes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscussionNote'
         submittedAt:
           type: "string"
           format: "date-time"
@@ -3869,7 +4134,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Item'
+            $ref: '#/components/schemas/PanelistItem'
         submissions:
           type: array
           items:

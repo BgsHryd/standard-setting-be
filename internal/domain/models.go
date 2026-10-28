@@ -88,6 +88,8 @@ type CandidateDefinitionRevision struct {
 }
 
 type ProjectSubject struct {
+	ShowKJ              bool                          `json:"showKJ" bson:"showKJ"`
+	ShowMeasure         bool                          `json:"showMeasure" bson:"showMeasure"`
 	PracticeStatus      string                        `json:"practiceStatus" bson:"practiceStatus"`
 	FinalNBK            *NBKDecision                  `json:"finalNBK,omitempty" bson:"finalNBK,omitempty"`
 	CandidateHistory    []CandidateDefinitionRevision `json:"candidateHistory,omitempty" bson:"candidateHistory,omitempty"`
@@ -104,6 +106,7 @@ type ProjectSubject struct {
 	PanelistNames       []string                      `json:"panelistNames,omitempty" bson:"panelistNames,omitempty"`
 }
 
+// KJ and Measure are exposed only through DTOs with an explicit access policy.
 type Item struct {
 	ProjectHistory []ItemProjectUsage `json:"projectHistory" bson:"projectHistory"`
 	ID             string             `json:"id" bson:"_id"`
@@ -111,6 +114,8 @@ type Item struct {
 	SubjectName    string             `json:"subjectName" bson:"subjectName"`
 	QuestionType   QuestionType       `json:"questionType" bson:"questionType"`
 	MaxScore       int                `json:"maxScore" bson:"maxScore"`
+	KJ             string             `json:"-" bson:"kj,omitempty"`
+	Measure        *float64           `json:"-" bson:"measure,omitempty"`
 	Rubric         []string           `json:"rubric,omitempty" bson:"rubric,omitempty"`
 	UsageStatus    ItemUsageStatus    `json:"usageStatus" bson:"usageStatus"`
 	ProjectID      string             `json:"projectId,omitempty" bson:"projectId,omitempty"`
@@ -140,6 +145,7 @@ type ItemResult struct {
 }
 
 type Round struct {
+	Starts            []RoundStart     `json:"-" bson:"starts"`
 	Receipts          []RoundReceipt   `json:"-" bson:"receipts"`
 	Revision          int              `json:"revision" bson:"revision"`
 	ExcludedPanelists []RoundExclusion `json:"excludedPanelists" bson:"excludedPanelists"`

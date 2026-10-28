@@ -21,3 +21,15 @@ func (m *Mongo) ListImpactBatches(ctx context.Context, projectID string) ([]doma
 	err = cur.All(ctx, &rows)
 	return rows, err
 }
+
+// ListImpactSummaries avoids loading participants' raw scores during panelist polling.
+func (m *Mongo) ListImpactSummaries(ctx context.Context, projectID string) ([]domain.ImpactBatch, error) {
+	cur, err := m.database.Collection("impact_batches").Find(ctx, bson.M{"projectId": projectID}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetProjection(bson.M{"scores": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	rows := []domain.ImpactBatch{}
+	err = cur.All(ctx, &rows)
+	return rows, err
+}

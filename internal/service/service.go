@@ -139,6 +139,10 @@ func (s *Service) UpsertItems(ctx context.Context, items []domain.Item) error {
 		for i := range items {
 			item := &items[i]
 			item.ID = strings.TrimSpace(item.ID)
+			item.KJ = strings.TrimSpace(item.KJ)
+			if err := domain.ValidateItemMetadata(item.KJ, item.Measure); err != nil {
+				return err
+			}
 			if item.ID == "" || item.SubjectCode == "" || item.SubjectName == "" || seen[item.ID] {
 				return errors.New("ID butir/mapel wajib diisi dan ID tidak boleh ganda")
 			}

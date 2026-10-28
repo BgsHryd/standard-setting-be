@@ -51,8 +51,9 @@ func RoundRevision(r Round) int {
 }
 
 func SubmissionReviewed(row Submission, round Round) bool {
-	revision := RoundRevision(round)
-	return row.ReviewRevision == revision || (revision == 1 && row.ReviewRevision == 0 && row.RoundRevision <= 1)
+	// Reopening a round preserves saved answers without a separate item acknowledgement.
+	// Candidate context and answer validity are checked by the caller; future revisions stay invalid.
+	return row.RoundRevision >= 0 && row.RoundRevision <= RoundRevision(round)
 }
 
 func ValidateNote(note string) error {

@@ -21,6 +21,8 @@ type CatalogWorkbookRow struct {
 	ItemID       string              `json:"itemId,omitempty"`
 	QuestionType domain.QuestionType `json:"questionType,omitempty"`
 	MaxScore     int                 `json:"maxScore,omitempty"`
+	KJ           string              `json:"kj,omitempty"`
+	Measure      *float64            `json:"measure,omitempty"`
 }
 
 var ErrInvalidCatalogWorkbook = errors.New("file Excel tidak valid")
@@ -38,7 +40,7 @@ func catalogHeaders(kind string) ([]string, error) {
 	case "subjects":
 		return []string{"kode_mapel", "mata_pelajaran"}, nil
 	case "items":
-		return []string{"id_butir", "kode_mapel", "bentuk_soal", "skor_maksimum", "rubrik"}, nil
+		return []string{"id_butir", "kode_mapel", "bentuk_soal", "skor_maksimum", "kj", "measure", "rubrik"}, nil
 	default:
 		return nil, errors.New("jenis impor harus items atau subjects")
 	}
@@ -78,6 +80,8 @@ func (s *Service) CatalogWorkbookTemplate(ctx context.Context, kind string) ([]b
 			"kode_mapel harus sudah terdaftar; lihat sheet Referensi mapel. ID butir wajib dan maksimal 200 karakter.",
 			"bentuk_soal: Pilihan Ganda, PG Kompleks, Essay; atau pilihan_ganda, pilihan_ganda_kompleks, essay.",
 			"skor_maksimum: bilangan bulat 1–100. Pilihan Ganda wajib 1. rubrik boleh kosong, maksimal 8000 karakter; satu catatan per baris dalam sel.",
+			"kj: kunci jawaban wajib diisi, maksimal 8000 karakter; contoh A, A,C, atau kunci jawaban essay.",
+			"measure: opsional, angka bulat/desimal positif atau negatif; contoh 0, -2, 1.25, -1,25. Kosong berarti belum ada nilai; nol tetap disimpan. Jangan gunakan pemisah ribuan.",
 			"Butir baru berstatus Tersedia. Alokasi ke proyek dilakukan melalui konfigurasi proyek.",
 		)
 		catalog, err := s.store.ListSubjects(ctx)
@@ -222,7 +226,15 @@ func (s *Service) ImportCatalogWorkbook(ctx context.Context, kind string, data [
 			if scoreErr != nil || score < 1 || score > 100 || (questionType == domain.QuestionTypePG && score != 1) {
 				problem(n+1, "skor_maksimum", cell(row, 3), "skor wajib bilangan bulat 1–100; Pilihan Ganda wajib 1")
 			}
-			rubricText := cell(row, 4)
+			key := cell(row, 4)
+			if err := domain.ValidateItemMetadata(key, nil); err != nil {
+				problem(n+1, "kj", key, err.Error())
+			}
+			measure, measureErr := domain.ParseMeasure(cell(row, 5))
+			if measureErr != nil {
+				problem(n+1, "measure", cell(row, 5), measureErr.Error())
+			}
+			rubricText := cell(row, 6)
 			if len([]rune(rubricText)) > 8000 {
 				problem(n+1, "rubrik", "", "rubrik maksimal 8000 karakter")
 			}
@@ -234,9 +246,9 @@ func (s *Service) ImportCatalogWorkbook(ctx context.Context, kind string, data [
 			}
 			now := time.Now().UTC()
 			items = append(items, domain.Item{ID: id, SubjectCode: sub.Code, SubjectName: sub.Name,
-				QuestionType: questionType, MaxScore: score, Rubric: rubric, UsageStatus: domain.ItemAvailable,
+				QuestionType: questionType, MaxScore: score, KJ: key, Measure: measure, Rubric: rubric, UsageStatus: domain.ItemAvailable,
 				ProjectHistory: []domain.ItemProjectUsage{}, CreatedAt: now, UpdatedAt: now})
-			result.Rows = append(result.Rows, CatalogWorkbookRow{Row: n + 1, Code: sub.Code, Name: sub.Name, ItemID: id, QuestionType: questionType, MaxScore: score})
+			result.Rows = append(result.Rows, CatalogWorkbookRow{Row: n + 1, Code: sub.Code, Name: sub.Name, ItemID: id, QuestionType: questionType, MaxScore: score, KJ: key, Measure: measure})
 		}
 		if result.Count == 0 {
 			problem(2, "baris", "", "isi minimal satu baris data")
