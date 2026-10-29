@@ -60,6 +60,57 @@ paths:
                     type: string
                     enum:
                       - standard-setting
+  /config/question-instructions:
+    get:
+      tags: [Config]
+      x-roles: [admin_super]
+      operationId: getQuestionInstructions
+      summary: Muat petunjuk global per jenis soal
+      description: Default digunakan hanya bila konfigurasi belum disimpan. Database error tidak diganti default. Panelis menerima petunjuk melalui form.
+      responses:
+        '200':
+          description: Konfigurasi petunjuk
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/QuestionInstructionConfig'
+        default:
+          $ref: '#/components/responses/ProtectedError'
+    put:
+      tags: [Config]
+      x-roles: [admin_super]
+      operationId: saveQuestionInstructions
+      summary: Simpan petunjuk global dengan pemeriksaan versi
+      description: HTML disanitasi; hanya paragraf, heading1–3, daftar, bold/italic/underline dan tabel. Seluruh jenis wajib berisi teks. Perubahan dan audit disimpan dalam transaksi. Tidak mengubah formula penilaian.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionInstructionConfig'
+      responses:
+        '200':
+          description: Versi baru tersimpan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/QuestionInstructionConfig'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /auth/login:
     post:
       tags:
@@ -3475,6 +3526,41 @@ components:
               type: string
               enum: ['', Sukar, Sedang, Mudah]
               description: Dipilih manual; kosong untuk data yang belum dikategorikan. Tidak mengubah nilai measure atau kalkulasi.
+    QuestionInstructionConfig:
+      type: object
+      required: [version, instructions]
+      properties:
+        version:
+          type: integer
+          minimum: 0
+          description: Versi yang dibaca admin; stale version ditolak409.
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        instructions:
+          $ref: '#/components/schemas/QuestionInstructions'
+    QuestionInstructions:
+      type: object
+      additionalProperties: false
+      description: HTML bersih maksimal100KB dan20.000 karakter teks per jenis; cell colspan/rowspan1–20, tanpa script, event, style, gambar, iframe atau link.
+      required: [pilihan_ganda, pilihan_ganda_kompleks_mcma, pilihan_ganda_kompleks_bs, essay, pilihan_ganda_kompleks]
+      properties:
+        pilihan_ganda:
+          type: string
+          maxLength: 100000
+        pilihan_ganda_kompleks_mcma:
+          type: string
+          maxLength: 100000
+        pilihan_ganda_kompleks_bs:
+          type: string
+          maxLength: 100000
+        essay:
+          type: string
+          maxLength: 100000
+        pilihan_ganda_kompleks:
+          type: string
+          maxLength: 100000
     Item:
       type: object
       properties:
@@ -4306,6 +4392,8 @@ components:
     PanelistForm:
       type: object
       properties:
+        questionInstructions:
+          $ref: '#/components/schemas/QuestionInstructions'
         roundReview:
           allOf:
             - $ref: '#/components/schemas/RoundReview'

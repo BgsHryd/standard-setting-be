@@ -265,24 +265,25 @@ func publicRound(r domain.Round) domain.Round {
 }
 
 type PanelistForm struct {
-	RoundReview         *RoundReview            `json:"roundReview"`
-	RoundOutcomes       []RoundOutcome          `json:"roundOutcomes"`
-	RoundStartRequired  bool                    `json:"roundStartRequired"`
-	RoundStartedAt      *time.Time              `json:"roundStartedAt"`
-	DiscussionNotes     []domain.DiscussionNote `json:"discussionNotes"`
-	SubmittedAt         *time.Time              `json:"submittedAt"`
-	AllRoundsDone       bool                    `json:"allRoundsDone"`
-	Project             domain.Project          `json:"project"`
-	Subject             domain.ProjectSubject   `json:"subject"`
-	Round               domain.Round            `json:"round"`
-	Items               []domain.Item           `json:"items"`
-	Submissions         []domain.Submission     `json:"submissions"`
-	History             []domain.Round          `json:"history"`
-	PreviousSubmissions []domain.Submission     `json:"previousSubmissions"`
-	PreviousRound       *int                    `json:"previousRound"`
-	ReadOnly            bool                    `json:"readOnly"`
-	Feedback            []ItemFeedback          `json:"feedback"`
-	PeriodMessage       string                  `json:"periodMessage"`
+	QuestionInstructions map[domain.QuestionType]string `json:"questionInstructions"`
+	RoundReview          *RoundReview                   `json:"roundReview"`
+	RoundOutcomes        []RoundOutcome                 `json:"roundOutcomes"`
+	RoundStartRequired   bool                           `json:"roundStartRequired"`
+	RoundStartedAt       *time.Time                     `json:"roundStartedAt"`
+	DiscussionNotes      []domain.DiscussionNote        `json:"discussionNotes"`
+	SubmittedAt          *time.Time                     `json:"submittedAt"`
+	AllRoundsDone        bool                           `json:"allRoundsDone"`
+	Project              domain.Project                 `json:"project"`
+	Subject              domain.ProjectSubject          `json:"subject"`
+	Round                domain.Round                   `json:"round"`
+	Items                []domain.Item                  `json:"items"`
+	Submissions          []domain.Submission            `json:"submissions"`
+	History              []domain.Round                 `json:"history"`
+	PreviousSubmissions  []domain.Submission            `json:"previousSubmissions"`
+	PreviousRound        *int                           `json:"previousRound"`
+	ReadOnly             bool                           `json:"readOnly"`
+	Feedback             []ItemFeedback                 `json:"feedback"`
+	PeriodMessage        string                         `json:"periodMessage"`
 }
 
 func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCode string) (PanelistForm, error) {
@@ -376,10 +377,14 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 		}
 	}
 	startRequired := !readOnly && round.Number > 1 && domain.RoundRevision(round) == 1 && review != nil && len(rows) == 0 && startedAt == nil
+	questionConfig, err := s.QuestionInstructions(ctx)
+	if err != nil {
+		return PanelistForm{}, err
+	}
 	for i := range history {
 		history[i] = publicRound(history[i])
 	}
-	return PanelistForm{RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
+	return PanelistForm{QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
 }
 
 func (s *Service) SaveSubmission(ctx context.Context, userID, name, projectID, subjectCode string, number int, itemID string, answer domain.Answer) (domain.Submission, error) {

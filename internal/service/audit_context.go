@@ -23,6 +23,9 @@ func (s *Service) AuditContexts(ctx context.Context, events []domain.AuditEvent)
 	rounds := map[string]map[string]domain.Round{}
 	for _, event := range events {
 		context := AuditContext{}
+		if event.Action == "question_instructions_update" {
+			context.TargetLabel = "Config · Petunjuk jenis soal"
+		}
 		if event.ProjectID == "" {
 			result[event.ID] = context
 			continue

@@ -84,6 +84,8 @@ func New(config Config) *App {
 
 	admin := protected.Group("")
 	adminRole := handler.requireRoles(domain.RoleAdminSuper)
+	admin.Get("/config/question-instructions", adminRole, handler.getQuestionInstructions)
+	admin.Put("/config/question-instructions", adminRole, handler.saveQuestionInstructions)
 	admin.Get("/projects", adminRole, handler.listProjects)
 	admin.Post("/projects", adminRole, handler.saveProject)
 	admin.Get("/projects/:id", adminRole, handler.getProject)
