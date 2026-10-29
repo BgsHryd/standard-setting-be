@@ -162,7 +162,7 @@ func (s *Service) UpsertItems(ctx context.Context, items []domain.Item) error {
 			if !found {
 				return errors.New("mata pelajaran tidak ditemukan di katalog")
 			}
-			if item.QuestionType != domain.QuestionTypePG && item.QuestionType != domain.QuestionTypeComplex && item.QuestionType != domain.QuestionTypeEssay {
+			if item.QuestionType != domain.QuestionTypePG && !item.QuestionType.UsesDistribution() {
 				return errors.New("jenis soal tidak valid")
 			}
 			if item.MaxScore < 1 || item.MaxScore > 100 || (item.QuestionType == domain.QuestionTypePG && item.MaxScore != 1) {

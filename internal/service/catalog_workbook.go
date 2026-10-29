@@ -78,7 +78,7 @@ func (s *Service) CatalogWorkbookTemplate(ctx context.Context, kind string) ([]b
 	} else {
 		guide = append(guide,
 			"kode_mapel harus sudah terdaftar; lihat sheet Referensi mapel. ID butir wajib dan maksimal 200 karakter.",
-			"bentuk_soal: Pilihan Ganda, PG Kompleks, Essay; atau pilihan_ganda, pilihan_ganda_kompleks, essay.",
+			"bentuk_soal: Pilihan Ganda, Pilihan Ganda Kompleks MCMA, Pilihan Ganda Kompleks BS, Essay; atau pilihan_ganda, pilihan_ganda_kompleks_mcma, pilihan_ganda_kompleks_bs, essay. PG Kompleks/pilihan_ganda_kompleks tetap diterima untuk kompatibilitas data lama.",
 			"skor_maksimum: bilangan bulat 1–100. Pilihan Ganda wajib 1. rubrik boleh kosong, maksimal 8000 karakter; satu catatan per baris dalam sel.",
 			"kj: kunci jawaban wajib diisi, maksimal 8000 karakter; contoh A, A,C, atau kunci jawaban essay.",
 			"measure: opsional, angka bulat/desimal positif atau negatif; contoh 0, -2, 1.25, -1,25. Kosong berarti belum ada nilai; nol tetap disimpan. Jangan gunakan pemisah ribuan.",
@@ -218,9 +218,13 @@ func (s *Service) ImportCatalogWorkbook(ctx context.Context, kind string, data [
 				questionType = domain.QuestionTypePG
 			case "pg kompleks", "pilihan ganda kompleks":
 				questionType = domain.QuestionTypeComplex
+			case "pg kompleks mcma", "pilihan ganda kompleks mcma":
+				questionType = domain.QuestionTypeComplexMCMA
+			case "pg kompleks bs", "pilihan ganda kompleks bs":
+				questionType = domain.QuestionTypeComplexBS
 			}
-			if questionType != domain.QuestionTypePG && questionType != domain.QuestionTypeComplex && questionType != domain.QuestionTypeEssay {
-				problem(n+1, "bentuk_soal", cell(row, 2), "pilih Pilihan Ganda, PG Kompleks, atau Essay")
+			if questionType != domain.QuestionTypePG && !questionType.UsesDistribution() {
+				problem(n+1, "bentuk_soal", cell(row, 2), "pilih Pilihan Ganda, Pilihan Ganda Kompleks MCMA, Pilihan Ganda Kompleks BS, atau Essay")
 			}
 			score, scoreErr := strconv.Atoi(cell(row, 3))
 			if scoreErr != nil || score < 1 || score > 100 || (questionType == domain.QuestionTypePG && score != 1) {

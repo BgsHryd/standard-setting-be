@@ -14,7 +14,7 @@ func ValidateAnswer(answer Answer) error {
 		if len(answer.Distribution) > 0 {
 			return fmt.Errorf("Pilihan Ganda tidak menerima distribusi skor")
 		}
-	case QuestionTypeComplex, QuestionTypeEssay:
+	case QuestionTypeComplex, QuestionTypeComplexMCMA, QuestionTypeComplexBS, QuestionTypeEssay:
 		if len(answer.Distribution) == 0 {
 			return fmt.Errorf("distribusi skor wajib diisi")
 		}

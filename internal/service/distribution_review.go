@@ -34,7 +34,7 @@ func snapshotReviewItem(snap domain.RoundSnapshot, itemID, userID string) RoundR
 		}
 		seen[row.PanelistID] = true
 		answer := row.Answer
-		if row.Status != "saved" || (answer.QuestionType != domain.QuestionTypeComplex && answer.QuestionType != domain.QuestionTypeEssay) || answer.Value != nil || len(answer.Distribution) < 2 || domain.ValidateAnswer(answer) != nil {
+		if row.Status != "saved" || !answer.QuestionType.UsesDistribution() || answer.Value != nil || len(answer.Distribution) < 2 || domain.ValidateAnswer(answer) != nil {
 			valid = false
 			continue
 		}

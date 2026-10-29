@@ -3194,6 +3194,8 @@ components:
       enum:
         - pilihan_ganda
         - pilihan_ganda_kompleks
+        - pilihan_ganda_kompleks_mcma
+        - pilihan_ganda_kompleks_bs
         - essay
     UserView:
       type: object

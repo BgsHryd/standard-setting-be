@@ -29,10 +29,22 @@ const (
 type QuestionType string
 
 const (
-	QuestionTypePG      QuestionType = "pilihan_ganda"
-	QuestionTypeComplex QuestionType = "pilihan_ganda_kompleks"
-	QuestionTypeEssay   QuestionType = "essay"
+	QuestionTypePG          QuestionType = "pilihan_ganda"
+	QuestionTypeComplex     QuestionType = "pilihan_ganda_kompleks"
+	QuestionTypeComplexMCMA QuestionType = "pilihan_ganda_kompleks_mcma"
+	QuestionTypeComplexBS   QuestionType = "pilihan_ganda_kompleks_bs"
+	QuestionTypeEssay       QuestionType = "essay"
 )
+
+// UsesDistribution keeps complex subtypes and legacy items on the same scoring path.
+func (kind QuestionType) UsesDistribution() bool {
+	switch kind {
+	case QuestionTypeComplex, QuestionTypeComplexMCMA, QuestionTypeComplexBS, QuestionTypeEssay:
+		return true
+	default:
+		return false
+	}
+}
 
 type User struct {
 	SlotID             string     `json:"slotId,omitempty" bson:"slotId,omitempty"`
