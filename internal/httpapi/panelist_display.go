@@ -8,8 +8,9 @@ import (
 
 type panelistItemDTO struct {
 	domain.Item
-	KJ      *string  `json:"kj,omitempty"`
-	Measure *float64 `json:"measure,omitempty"`
+	KJ              *string  `json:"kj,omitempty"`
+	Measure         *float64 `json:"measure,omitempty"`
+	MeasureCategory string   `json:"measureCategory,omitempty"`
 }
 
 func panelistFormView(form service.PanelistForm) any {
@@ -22,6 +23,7 @@ func panelistFormView(form service.PanelistForm) any {
 		}
 		if form.Subject.ShowMeasure {
 			items[i].Measure = item.Measure
+			items[i].MeasureCategory = item.MeasureCategory
 		}
 	}
 	return struct {

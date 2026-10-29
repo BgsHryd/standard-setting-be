@@ -884,7 +884,7 @@ paths:
                       data:
                         type: array
                         items:
-                          $ref: '#/components/schemas/Item'
+                          $ref: '#/components/schemas/CatalogItem'
         default:
           $ref: '#/components/responses/ProtectedError'
     post:
@@ -910,7 +910,7 @@ paths:
                 items:
                   type: array
                   items:
-                    $ref: '#/components/schemas/Item'
+                    $ref: '#/components/schemas/CatalogItem'
       responses:
         '200':
           description: Array request items; timestamp/default yang diisi service bisa terlihat melalui backing slice
@@ -924,7 +924,7 @@ paths:
                       data:
                         type: array
                         items:
-                          $ref: '#/components/schemas/Item'
+                          $ref: '#/components/schemas/CatalogItem'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -1003,7 +1003,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        $ref: '#/components/schemas/Item'
+                        $ref: '#/components/schemas/CatalogItem'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -3460,6 +3460,21 @@ components:
           readOnly: true
           items:
             $ref: '#/components/schemas/CandidateDefinitionRevision'
+    CatalogItem:
+      allOf:
+        - $ref: '#/components/schemas/Item'
+        - type: object
+          properties:
+            kj:
+              type: string
+            measure:
+              type: number
+              nullable: true
+              description: Nilai numerik independen dari kategori.
+            measureCategory:
+              type: string
+              enum: ['', Sukar, Sedang, Mudah]
+              description: Dipilih manual; kosong untuk data yang belum dikategorikan. Tidak mengubah nilai measure atau kalkulasi.
     Item:
       type: object
       properties:
@@ -4199,6 +4214,10 @@ components:
             measure:
               type: number
               description: Hanya dikirim ketika subject.showMeasure=true dan nilai tersedia; nol/negatif valid.
+            measureCategory:
+              type: string
+              enum: [Sukar, Sedang, Mudah]
+              description: Pilihan manual independen dari angka measure. Hanya dikirim ketika showMeasure=true dan kategori tersedia. Tidak memengaruhi kalkulasi penilaian.
     RoundStart:
       type: object
       required: [roundNumber, roundRevision, startedAt]

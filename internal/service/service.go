@@ -140,6 +140,11 @@ func (s *Service) UpsertItems(ctx context.Context, items []domain.Item) error {
 			item := &items[i]
 			item.ID = strings.TrimSpace(item.ID)
 			item.KJ = strings.TrimSpace(item.KJ)
+			category, err := domain.NormalizeMeasureCategory(item.MeasureCategory)
+			if err != nil {
+				return err
+			}
+			item.MeasureCategory = category
 			if err := domain.ValidateItemMetadata(item.KJ, item.Measure); err != nil {
 				return err
 			}

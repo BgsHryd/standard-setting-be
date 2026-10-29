@@ -120,22 +120,23 @@ type ProjectSubject struct {
 
 // KJ and Measure are exposed only through DTOs with an explicit access policy.
 type Item struct {
-	ProjectHistory []ItemProjectUsage `json:"projectHistory" bson:"projectHistory"`
-	ID             string             `json:"id" bson:"_id"`
-	SubjectCode    string             `json:"subjectCode" bson:"subjectCode"`
-	SubjectName    string             `json:"subjectName" bson:"subjectName"`
-	QuestionType   QuestionType       `json:"questionType" bson:"questionType"`
-	MaxScore       int                `json:"maxScore" bson:"maxScore"`
-	KJ             string             `json:"-" bson:"kj,omitempty"`
-	Measure        *float64           `json:"-" bson:"measure,omitempty"`
-	Rubric         []string           `json:"rubric,omitempty" bson:"rubric,omitempty"`
-	UsageStatus    ItemUsageStatus    `json:"usageStatus" bson:"usageStatus"`
-	ProjectID      string             `json:"projectId,omitempty" bson:"projectId,omitempty"`
-	ProjectName    string             `json:"projectName,omitempty" bson:"projectName,omitempty"`
-	ReadOnly       bool               `json:"readOnly" bson:"readOnly"`
-	FinalResult    *ItemResult        `json:"finalResult,omitempty" bson:"finalResult,omitempty"`
-	CreatedAt      time.Time          `json:"createdAt" bson:"createdAt"`
-	UpdatedAt      time.Time          `json:"updatedAt" bson:"updatedAt"`
+	ProjectHistory  []ItemProjectUsage `json:"projectHistory" bson:"projectHistory"`
+	ID              string             `json:"id" bson:"_id"`
+	SubjectCode     string             `json:"subjectCode" bson:"subjectCode"`
+	SubjectName     string             `json:"subjectName" bson:"subjectName"`
+	QuestionType    QuestionType       `json:"questionType" bson:"questionType"`
+	MaxScore        int                `json:"maxScore" bson:"maxScore"`
+	KJ              string             `json:"-" bson:"kj,omitempty"`
+	Measure         *float64           `json:"-" bson:"measure,omitempty"`
+	MeasureCategory string             `json:"-" bson:"measureCategory,omitempty"`
+	Rubric          []string           `json:"rubric,omitempty" bson:"rubric,omitempty"`
+	UsageStatus     ItemUsageStatus    `json:"usageStatus" bson:"usageStatus"`
+	ProjectID       string             `json:"projectId,omitempty" bson:"projectId,omitempty"`
+	ProjectName     string             `json:"projectName,omitempty" bson:"projectName,omitempty"`
+	ReadOnly        bool               `json:"readOnly" bson:"readOnly"`
+	FinalResult     *ItemResult        `json:"finalResult,omitempty" bson:"finalResult,omitempty"`
+	CreatedAt       time.Time          `json:"createdAt" bson:"createdAt"`
+	UpdatedAt       time.Time          `json:"updatedAt" bson:"updatedAt"`
 }
 
 type ItemResult struct {

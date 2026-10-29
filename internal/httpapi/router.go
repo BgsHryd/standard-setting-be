@@ -440,6 +440,7 @@ func (h *Handler) saveItems(c *fiber.Ctx) error {
 	for i, row := range request.Items {
 		items[i] = row.Item
 		items[i].KJ, items[i].Measure = row.KJ, row.Measure
+		items[i].MeasureCategory = row.MeasureCategory
 	}
 	if err := h.service.UpsertItems(c.UserContext(), items); err != nil {
 		return errorResponse(c, 409, err.Error())
