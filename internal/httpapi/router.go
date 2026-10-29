@@ -118,6 +118,7 @@ func New(config Config) *App {
 	panelist.Put("/submissions/:itemId", handler.saveSubmission)
 	handler.registerCoreRoutes(protected, admin, adminRole, pic, panelist)
 	handler.registerWorkflowRoutes(pic, panelist)
+	handler.registerPICItemResultRoutes(pic)
 	handler.registerAccountManagementRoutes(admin, adminRole)
 	handler.registerProjectWorkbookRoutes(admin, adminRole)
 	handler.registerCatalogWorkbookRoutes(admin, adminRole)

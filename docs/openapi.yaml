@@ -1065,6 +1065,48 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/ProtectedError'
+  /pic/item-results:
+    get:
+      tags: [Monitoring]
+      x-roles: [pic_mapel]
+      operationId: picItemResults
+      summary: Matriks hasil butir per panelis untuk PIC mapel sendiri
+      description: |
+        Scope mengikuti akun PIC aktif yang masih ditugaskan pada proyek/mapelnya.
+        Pembacaan roster dan nilai dilakukan dalam satu transaksi. Putaran final memakai snapshot
+        finalisasi; putaran aktif memakai jawaban saved yang valid, sesuai revisi putaran dan versi kandidat.
+        Panelis nonaktif, dihapus, tidak ditugaskan atau dikecualikan pada putaran tidak disertakan.
+        Values adalah persentase skor maksimum per butir. Key yang tidak ada berarti belum terisi, bukan nol.
+        Tidak mengirim password, kontak, catatan atau jawaban mentah. FE menghitung median per butir,
+        jarak absolut >10 poin dan nilai tes berbobot; tepat 10 tidak termasuk berbeda jauh.
+      parameters:
+        - $ref: '#/components/parameters/ProjectQuery'
+        - $ref: '#/components/parameters/SubjectQuery'
+        - name: round
+          in: query
+          description: Nol/diabaikan untuk putaran terkini; angka positif untuk putaran aktif/final tertentu.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Hasil per butir untuk roster efektif putaran terpilih
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PICItemResults'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /pic/panelist-display:
     put:
       tags:
@@ -3632,6 +3674,56 @@ components:
         needsReview:
           type: integer
           minimum: 0
+    PICItemResults:
+      type: object
+      required: [projectCode, subjectCode, subjectName, round, rounds, panelists, items, generatedAt]
+      properties:
+        projectCode:
+          type: string
+        subjectCode:
+          type: string
+        subjectName:
+          type: string
+        round:
+          $ref: '#/components/schemas/Round'
+        rounds:
+          type: array
+          description: Putaran aktif/final, metadata publik tanpa snapshot jawaban.
+          items:
+            $ref: '#/components/schemas/Round'
+        panelists:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        items:
+          type: array
+          items:
+            type: object
+            required: [itemId, questionType, maxScore, values]
+            properties:
+              itemId:
+                type: string
+              questionType:
+                $ref: '#/components/schemas/QuestionType'
+              maxScore:
+                type: integer
+                minimum: 1
+              values:
+                type: object
+                description: Peta ID panelis ke persen skor maksimum. PG memakai nilai langsung; distribusi memakai jumlah skor kali persentase dibagi skor maksimum.
+                additionalProperties:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+        generatedAt:
+          type: string
+          format: date-time
     Monitoring:
       type: object
       properties:
@@ -4086,6 +4178,25 @@ components:
           description: Null tanpa batch skor peserta yang cocok dengan subject dan snapshot final ini.
         projectionCount:
           type: integer
+    RoundReviewItem:
+      allOf:
+        - $ref: '#/components/schemas/ItemFeedback'
+        - type: object
+          properties:
+            ownDistribution:
+              type: array
+              description: Kandidat dari 100 pada skor 0..maksimum, hanya jawaban pemanggil dari snapshot ini; absen untuk PG atau jika tidak tersedia.
+              items:
+                type: integer
+                minimum: 0
+                maximum: 100
+            panelDistribution:
+              type: array
+              description: Rata-rata per kategori skor 0..maksimum dari panelis efektif unik pada snapshot yang sama. Absen bila n<3 atau data tidak lengkap/valid. Tidak berisi distribusi individual panelis lain.
+              items:
+                type: number
+                minimum: 0
+                maximum: 100
     RoundReview:
       allOf:
         - $ref: '#/components/schemas/RoundOutcome'
@@ -4094,7 +4205,7 @@ components:
             items:
               type: array
               items:
-                $ref: '#/components/schemas/ItemFeedback'
+                $ref: '#/components/schemas/RoundReviewItem'
     PanelistForm:
       type: object
       properties:

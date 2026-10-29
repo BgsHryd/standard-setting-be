@@ -30,7 +30,7 @@ type RoundOutcome struct {
 
 type RoundReview struct {
 	RoundOutcome
-	Items []ItemFeedback `json:"items"`
+	Items []RoundReviewItem `json:"items"`
 }
 
 type impactSummaryStore interface {
@@ -111,12 +111,12 @@ func (s *Service) roundResults(ctx context.Context, user string, p domain.Projec
 			}
 		}
 		outcomes = append(outcomes, out)
-		items := []ItemFeedback{}
+		items := []RoundReviewItem{}
 		for _, id := range subject.ItemIDs {
 			if _, ok := snap.ItemStatistics[id]; !ok {
 				continue
 			}
-			f := snapshotFeedback(snap, id, user)
+			f := snapshotReviewItem(snap, id, user)
 			// Ordering anonymous points by value avoids linking the same panelist across items.
 			sort.Float64s(f.Values)
 			items = append(items, f)
