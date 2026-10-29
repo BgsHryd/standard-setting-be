@@ -93,7 +93,7 @@ func TestRoundExclusionIsLocalAndPreservesResponses(t *testing.T) {
 	}
 }
 
-func TestRollbackRequiresEveryResponseReviewAndRejectsStaleQueue(t *testing.T) {
+func TestRollbackPreservesSavedResponsesAndRejectsStaleQueue(t *testing.T) {
 	ctx, s, st, p := fixture(t, true)
 	fillRound(t, ctx, s, p, 1, 0)
 	if _, err := s.RoundAction(ctx, p.ID, "MAT", "finalize", "FINALISASI PUTARAN", "pic", 1, 1); err != nil {
@@ -106,20 +106,18 @@ func TestRollbackRequiresEveryResponseReviewAndRejectsStaleQueue(t *testing.T) {
 	if domain.RoundRevision(current) != 2 || len(current.Snapshots) != 1 {
 		t.Fatalf("rollback lost revision history: %+v", current)
 	}
-	if _, err := s.RoundAction(ctx, p.ID, "MAT", "finalize", "FINALISASI PUTARAN", "pic", 1, 2); err == nil {
-		t.Fatal("rollback finalized without review")
+	monitoring, err := s.Monitoring(ctx, p.ID, "MAT")
+	if err != nil || !monitoring.CanFinalize {
+		t.Fatalf("saved rollback responses should remain complete: %+v %v", monitoring, err)
+	}
+	for _, panelist := range monitoring.Panelists {
+		if panelist.NeedsReview != 0 {
+			t.Fatal("rollback required per-item acknowledgement")
+		}
 	}
 	a := domain.Answer{QuestionType: domain.QuestionTypePG, Value: intValue(65)}
 	if _, err := s.SaveSubmissionWithOptions(ctx, "p1", "A", p.ID, "MAT", 1, "MAT-001", a, SubmissionOptions{RoundRevision: 1}); !errors.Is(err, ErrRevisionConflict) {
 		t.Fatalf("old queue accepted: %v", err)
-	}
-	for _, id := range []string{"p1", "p2"} {
-		rows, _ := st.ListSubmissions(ctx, p.ID, "MAT", 1, id)
-		for _, row := range rows {
-			if _, err := s.ReviewSubmission(ctx, id, p.ID, "MAT", 1, row.ItemID, 2, row.Version); err != nil {
-				t.Fatal(err)
-			}
-		}
 	}
 	if _, err := s.RoundAction(ctx, p.ID, "MAT", "finalize", "FINALISASI PUTARAN", "pic", 1, 2); err != nil {
 		t.Fatal(err)

@@ -39,7 +39,7 @@ func (l *securityLimiter) ResetLogin(context.Context, string) error { l.reset = 
 func securedService(t *testing.T) (*Service, *securityUsers) {
 	t.Helper()
 	hash, _ := bcrypt.GenerateFromPassword([]byte("correct"), bcrypt.MinCost)
-	u := &securityUsers{fakeUsers: fakeUsers{domain.User{ID: "u", Username: "u", PasswordHash: string(hash), Active: true, Role: domain.RolePanelist}}, contact: true}
+	u := &securityUsers{fakeUsers: fakeUsers{domain.User{ID: "u", Username: "u", PasswordHash: string(hash), Active: true, Role: domain.RolePanelist, ProjectID: "test-project"}}, contact: true}
 	return NewService(u, &fakeSessions{}, "secret", time.Minute, time.Hour), u
 }
 func TestLoginAuditsWithoutSecretsAndReadsLiveContact(t *testing.T) {

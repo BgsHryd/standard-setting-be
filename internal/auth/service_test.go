@@ -12,6 +12,14 @@ import (
 
 type fakeUsers struct{ user domain.User }
 
+func (f *fakeUsers) GetProject(_ context.Context, id string) (domain.Project, error) {
+	if id == "" || id != f.user.ProjectID {
+		return domain.Project{}, errors.New("project not found")
+	}
+	now := time.Now().UTC()
+	return domain.Project{ID: id, StartDate: now.Add(-time.Hour), EndDate: now.Add(time.Hour)}, nil
+}
+
 func (f *fakeUsers) FindByUsername(_ context.Context, username string) (domain.User, error) {
 	if f.user.Username != username {
 		return domain.User{}, errors.New("not found")
@@ -56,7 +64,7 @@ func (f *fakeSessions) Consume(_ context.Context, tokenID string) (string, error
 
 func TestLoginReturnsForcedPasswordChangeState(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("12345*"), bcrypt.MinCost)
-	users := &fakeUsers{user: domain.User{ID: "user-1", Username: "panelis.mat", Name: "Panelis Matematika", PasswordHash: string(hash), Role: domain.RolePanelist, Active: true, MustChangePassword: true}}
+	users := &fakeUsers{user: domain.User{ID: "user-1", Username: "panelis.mat", Name: "Panelis Matematika", PasswordHash: string(hash), Role: domain.RolePanelist, ProjectID: "test-project", Active: true, MustChangePassword: true}}
 	service := NewService(users, &fakeSessions{}, "test-secret-at-least-32-characters", 15*time.Minute, 24*time.Hour)
 
 	result, err := service.Login(context.Background(), "panelis.mat", "12345*")

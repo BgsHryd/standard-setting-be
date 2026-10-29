@@ -19,6 +19,14 @@ import (
 
 type testUsers struct{ user domain.User }
 
+func (t *testUsers) GetProject(_ context.Context, id string) (domain.Project, error) {
+	if id == "" || id != t.user.ProjectID {
+		return domain.Project{}, errors.New("project not found")
+	}
+	now := time.Now().UTC()
+	return domain.Project{ID: id, StartDate: now.Add(-time.Hour), EndDate: now.Add(time.Hour)}, nil
+}
+
 func (t *testUsers) FindByUsername(_ context.Context, username string) (domain.User, error) {
 	if username != t.user.Username {
 		return domain.User{}, errors.New("not found")

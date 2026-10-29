@@ -71,7 +71,7 @@ func (*auditRouteUsers) ListAudit(context.Context, string, string, string) ([]do
 func TestAuditRouteAdminOnly(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.MinCost)
 	for _, role := range []domain.Role{domain.RoleAdminSuper, domain.RolePanelist} {
-		users := &auditRouteUsers{testUsers{domain.User{ID: "u", Username: "u", Name: "Auditor", PasswordHash: string(hash), Active: true, Role: role}}}
+		users := &auditRouteUsers{testUsers{domain.User{ID: "u", Username: "u", Name: "Auditor", PasswordHash: string(hash), Active: true, Role: role, ProjectID: "audit-project"}}}
 		s := auth.NewService(users, &testSessions{}, "secret", time.Minute, time.Hour)
 		login, err := s.LoginBrowser(context.Background(), "u", "secret", "")
 		if err != nil {

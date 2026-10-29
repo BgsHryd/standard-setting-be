@@ -12,6 +12,8 @@ func TestWorkflowEndpointsEnforceRoleAndCSRF(t *testing.T) {
 		method, path string
 		owner        domain.Role
 	}{
+		{"POST", "/panelist/rounds/start", domain.RolePanelist},
+		{"PUT", "/panelist/rounds/notes/MAT-001", domain.RolePanelist},
 		{"POST", "/panelist/rounds/submit", domain.RolePanelist},
 		{"POST", "/panelist/rounds/reopen", domain.RolePanelist},
 		{"GET", "/panelist/practice", domain.RolePanelist},
@@ -19,6 +21,7 @@ func TestWorkflowEndpointsEnforceRoleAndCSRF(t *testing.T) {
 		{"POST", "/panelist/practice/finish", domain.RolePanelist},
 		{"PUT", "/panelist/practice/answers/practice-pg", domain.RolePanelist},
 		{"POST", "/panelist/connection", domain.RolePanelist},
+		{"GET", "/pic/item-results", domain.RolePICMapel},
 		{"POST", "/pic/practice/end", domain.RolePICMapel},
 		{"POST", "/pic/nbk/final", domain.RolePICMapel},
 		{"POST", "/pic/round-plan/extend", domain.RolePICMapel},

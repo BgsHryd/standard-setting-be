@@ -90,6 +90,7 @@ func TestCustomUsernameWorkbookAtomicCollisionThenSuccess(t *testing.T) {
 	book, _ := excelize.OpenReader(bytes.NewReader(data))
 	defer book.Close()
 	book.SetCellValue("Data", "D5", "SS-QA.MAT.PIC01")
+	book.SetCellStr("Data", "E5", "custom-qa-pass*")
 	b, _ := book.WriteToBuffer()
 	before, _ := st.GetProject(ctx, p.ID)
 	bad, err := s.ImportWorkbook(ctx, p.ID, 4, b.Bytes(), true)
@@ -108,7 +109,7 @@ func TestCustomUsernameWorkbookAtomicCollisionThenSuccess(t *testing.T) {
 		t.Fatalf("valid custom username rejected: %+v %v", good, err)
 	}
 	user, err := st.FindByUsername(ctx, "custom.qa.new")
-	if err != nil || user.Name != "New Custom" || !user.MustChangePassword {
+	if err != nil || user.Name != "New Custom" || user.MustChangePassword {
 		t.Fatal("custom account not created")
 	}
 }

@@ -150,8 +150,15 @@ func TestWorkflowRejectsStaleReceiptsAndExpiredPractice(t *testing.T) {
 	if _, err := s.RoundAction(ctx, p.ID, "MAT", "rollback", "ROLLBACK PUTARAN", "pic", 2, 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SubmitPanelistRound(ctx, "p1", 1, 2, true); err == nil {
-		t.Fatal("rollback reused unreviewed receipts")
+	reopened, _ := st.CurrentRound(ctx, p.ID, "MAT")
+	if len(reopened.Receipts) != 0 {
+		t.Fatal("rollback reused previous completion receipts")
+	}
+	if _, err := s.SubmitPanelistRound(ctx, "p1", 1, 1, true); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatal("rollback accepted a stale completion request")
+	}
+	if _, err := s.SubmitPanelistRound(ctx, "p1", 1, 2, true); err != nil {
+		t.Fatal("rollback required item acknowledgements before a fresh completion", err)
 	}
 	p, _ = st.GetProject(ctx, p.ID)
 	p.Subjects[0].PracticeStatus = "open"
@@ -199,8 +206,11 @@ func TestLastPlannedRoundCanReopenBeforeNBKAndCopiedSettingsPersist(t *testing.T
 	if err != nil || reopened.Number != 1 || reopened.Revision != 2 {
 		t.Fatalf("reopen last final: %+v %v", reopened, err)
 	}
-	if _, err = s.SubmitPanelistRound(ctx, "p1", 1, 2, true); err == nil {
-		t.Fatal("reused unreviewed receipt after reopening")
+	if len(reopened.Receipts) != 0 {
+		t.Fatal("reopening reused previous completion receipts")
+	}
+	if _, err = s.SubmitPanelistRound(ctx, "p1", 1, 2, true); err != nil {
+		t.Fatal("reopened final round required item acknowledgements", err)
 	}
 	p, _ = st.GetProject(ctx, p.ID)
 	p.PlannedRounds = 5
