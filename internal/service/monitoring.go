@@ -39,20 +39,21 @@ type MonitoringNote struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 type Monitoring struct {
-	FinalNBKChoices []FinalNBKChoice      `json:"finalNBKChoices"`
-	Project         domain.Project        `json:"project"`
-	Subject         domain.ProjectSubject `json:"subject"`
-	Round           domain.Round          `json:"round"`
-	History         []domain.Round        `json:"history"`
-	Panelists       []MonitoringPanelist  `json:"panelists"`
-	Items           []domain.Item         `json:"items"`
-	Statistics      *domain.ItemResult    `json:"statistics"`
-	TotalDone       int                   `json:"totalDone"`
-	TotalItems      int                   `json:"totalItems"`
-	CanFinalize     bool                  `json:"canFinalize"`
-	CanRollback     bool                  `json:"canRollback"`
-	Excluded        []MonitoringExclusion `json:"excluded"`
-	Notes           []MonitoringNote      `json:"notes"`
+	FinalNBKChoices []FinalNBKChoice         `json:"finalNBKChoices"`
+	Project         domain.Project           `json:"project"`
+	Subject         domain.ProjectSubject    `json:"subject"`
+	Round           domain.Round             `json:"round"`
+	History         []domain.Round           `json:"history"`
+	Panelists       []MonitoringPanelist     `json:"panelists"`
+	Items           []domain.Item            `json:"items"`
+	ItemGuidance    []MonitoringItemGuidance `json:"itemGuidance"`
+	Statistics      *domain.ItemResult       `json:"statistics"`
+	TotalDone       int                      `json:"totalDone"`
+	TotalItems      int                      `json:"totalItems"`
+	CanFinalize     bool                     `json:"canFinalize"`
+	CanRollback     bool                     `json:"canRollback"`
+	Excluded        []MonitoringExclusion    `json:"excluded"`
+	Notes           []MonitoringNote         `json:"notes"`
 }
 
 func (s *Service) displayRound(ctx context.Context, p domain.Project, subjectCode string, history []domain.Round) (domain.Round, error) {
@@ -161,6 +162,7 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 		byUser[row.PanelistID][row.ItemID] = row
 	}
 	result := Monitoring{Project: p, Subject: subject, Round: round, History: history, Panelists: []MonitoringPanelist{}, Items: ordered, TotalItems: len(subject.ItemIDs), Excluded: []MonitoringExclusion{}, Notes: []MonitoringNote{}}
+	result.ItemGuidance = monitoringItemGuidance(round, ordered)
 	result.FinalNBKChoices = []FinalNBKChoice{}
 	for _, r := range history {
 		if r.Status == "finalized" && r.FinalSnapshot != nil {
@@ -358,7 +360,7 @@ func (s *Service) MonitoringAll(ctx context.Context, id string, round int) (AllM
 				if historyErr != nil {
 					return historyErr
 				}
-				m = Monitoring{Project: p, Subject: subject, Round: domain.Round{Number: round, Status: "unavailable"}, History: history, Panelists: []MonitoringPanelist{}, Items: []domain.Item{}}
+				m = Monitoring{Project: p, Subject: subject, Round: domain.Round{Number: round, Status: "unavailable"}, History: history, Panelists: []MonitoringPanelist{}, Items: []domain.Item{}, ItemGuidance: []MonitoringItemGuidance{}}
 				err = nil
 			}
 			if err != nil {

@@ -75,6 +75,7 @@ func New(config Config) *App {
 	api.Post("/auth/login", handler.browserOrigin, handler.login)
 	api.Get("/auth/session", handler.browserState)
 	api.Get("/auth/events", handler.browserEvents)
+	api.Post("/auth/activity", handler.authenticate, handler.browserCSRF, handler.browserActivity)
 	api.Post("/auth/logout", handler.authenticate, handler.browserCSRF, handler.browserLogout)
 	api.Post("/auth/change-password", handler.authenticate, handler.browserCSRF, handler.changePassword)
 

@@ -48,6 +48,7 @@ func (s *Service) MonitoringAtRound(ctx context.Context, projectID, subjectCode 
 		Round:     domain.Round{ProjectID: p.ID, SubjectCode: subjectCode, Number: number, Status: "future"},
 		Panelists: []MonitoringPanelist{}, Items: []domain.Item{}, Excluded: []MonitoringExclusion{}, Notes: []MonitoringNote{},
 		FinalNBKChoices: []FinalNBKChoice{}, TotalItems: len(subject.ItemIDs),
+		ItemGuidance: []MonitoringItemGuidance{},
 	}, nil
 }
 

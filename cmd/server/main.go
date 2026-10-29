@@ -60,6 +60,9 @@ func main() {
 		15*time.Minute,
 		7*24*time.Hour,
 	)
+	if err := authService.SetBrowserSessionTTL(security.sessionIdleTTL, security.sessionAbsoluteTTL); err != nil {
+		log.Fatal(err)
+	}
 	authService.SetLoginLimiter(redisStore)
 	businessService := service.New(mongoStore, redisStore, initialPassword)
 	app := httpapi.New(httpapi.Config{Auth: authService, Service: businessService, AllowedOrigins: env("CORS_ORIGINS", "http://localhost:5176"), SecureCookies: strings.EqualFold(env("APP_ENV", "development"), "production"), TrustedProxies: strings.FieldsFunc(os.Getenv("TRUSTED_PROXIES"), func(r rune) bool { return r == ',' })})
@@ -83,14 +86,26 @@ func main() {
 }
 
 type startupSecurity struct {
-	jwtSecret, initialPassword string
-	seedDemo                   bool
+	jwtSecret, initialPassword         string
+	seedDemo                           bool
+	sessionIdleTTL, sessionAbsoluteTTL time.Duration
 }
 
 func loadStartupSecurity() (startupSecurity, error) {
 	cfg := startupSecurity{jwtSecret: env("JWT_SECRET", "standard-setting-local-secret-change-this"), initialPassword: env("INITIAL_PASSWORD", "12345*")}
-	value := env("SEED_DEMO_ITEMS", "false")
 	var err error
+	cfg.sessionIdleTTL, err = time.ParseDuration(env("SESSION_IDLE_TTL", "30m"))
+	if err != nil {
+		return cfg, fmt.Errorf("SESSION_IDLE_TTL harus durasi valid: %w", err)
+	}
+	cfg.sessionAbsoluteTTL, err = time.ParseDuration(env("SESSION_ABSOLUTE_TTL", "8h"))
+	if err != nil {
+		return cfg, fmt.Errorf("SESSION_ABSOLUTE_TTL harus durasi valid: %w", err)
+	}
+	if cfg.sessionIdleTTL.Milliseconds() <= 0 || cfg.sessionAbsoluteTTL.Milliseconds() <= 0 || cfg.sessionIdleTTL > cfg.sessionAbsoluteTTL {
+		return cfg, fmt.Errorf("SESSION_IDLE_TTL dan SESSION_ABSOLUTE_TTL wajib positif (minimal 1ms), idle tidak melebihi absolute")
+	}
+	value := env("SEED_DEMO_ITEMS", "false")
 	cfg.seedDemo, err = strconv.ParseBool(value)
 	if err != nil {
 		return cfg, fmt.Errorf("SEED_DEMO_ITEMS harus true atau false")

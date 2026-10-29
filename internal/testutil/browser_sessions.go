@@ -48,7 +48,7 @@ func (s *BrowserSessions) GetBrowserSession(_ context.Context, id string) (sessi
 		return session.BrowserSession{}, s.Err
 	}
 	rec, ok := s.records[id]
-	if !ok || rec.ExpiresAt <= time.Now().UnixMilli() {
+	if !ok || rec.ExpiresAt <= time.Now().UnixMilli() || (rec.AbsoluteExpiresAt > 0 && rec.AbsoluteExpiresAt <= time.Now().UnixMilli()) {
 		return rec, session.ErrBrowserSessionInvalid
 	}
 	if rec.Reason == "replaced" {
@@ -101,4 +101,37 @@ func (s *BrowserSessions) SubscribeBrowserSessions(_ context.Context, user strin
 	s.watchers[user][ch] = true
 	var once sync.Once
 	return ch, func() { once.Do(func() { s.mu.Lock(); defer s.mu.Unlock(); delete(s.watchers[user], ch); close(ch) }) }, nil
+}
+
+// RenewBrowserSession mirrors the atomic Redis operation for auth/HTTP unit tests.
+func (s *BrowserSessions) RenewBrowserSession(_ context.Context, id string, version int, idleTTL time.Duration) (session.BrowserSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Err != nil {
+		return session.BrowserSession{}, s.Err
+	}
+	rec, ok := s.records[id]
+	now := time.Now().UnixMilli()
+	if !ok || rec.ExpiresAt <= now || (rec.AbsoluteExpiresAt > 0 && rec.AbsoluteExpiresAt <= now) {
+		return rec, session.ErrBrowserSessionInvalid
+	}
+	if rec.Reason == "replaced" {
+		return rec, session.ErrBrowserSessionReplaced
+	}
+	if rec.Reason != "" {
+		return rec, session.ErrBrowserSessionInvalid
+	}
+	if s.active[rec.UserID] != id {
+		return rec, session.ErrBrowserSessionReplaced
+	}
+	if version != rec.AuthVersion || rec.AuthVersion < s.versions[rec.UserID] || idleTTL.Milliseconds() <= 0 {
+		return rec, session.ErrBrowserSessionInvalid
+	}
+	if rec.AbsoluteExpiresAt == 0 {
+		return rec, nil
+	}
+	rec.LastActivityAt = max(rec.LastActivityAt, now)
+	rec.ExpiresAt = min(rec.AbsoluteExpiresAt, max(rec.ExpiresAt, now+idleTTL.Milliseconds()))
+	s.records[id] = rec
+	return rec, nil
 }

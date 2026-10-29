@@ -133,7 +133,7 @@ func cookieLogin(t *testing.T, app *App) (*http.Cookie, auth.BrowserResult) {
 func TestCookieSessionFlagsReplacementCSRFAndLogout(t *testing.T) {
 	app := cookieApp(t, true)
 	first, state := cookieLogin(t, app)
-	if first.Name != "__Host-ss_session" || !first.Secure || !first.HttpOnly || first.SameSite != http.SameSiteLaxMode || first.Path != "/" || first.Domain != "" || first.MaxAge < 899 || first.MaxAge > 900 {
+	if first.Name != "__Host-ss_session" || !first.Secure || !first.HttpOnly || first.SameSite != http.SameSiteLaxMode || first.Path != "/" || first.Domain != "" || first.MaxAge < 28799 || first.MaxAge > 28800 {
 		t.Fatalf("unsafe cookie: %+v", first)
 	}
 	for _, tc := range []struct{ origin, csrf string }{{"https://evil.example", state.CSRFToken}, {"", state.CSRFToken}, {"https://app.example.test", "wrong"}} {

@@ -18,18 +18,22 @@ var (
 // ID is a SHA-256 digest of the cookie credential, never the credential itself.
 type BrowserSession struct {
 	// ExpectedID is used only when rotating an existing session.
-	ExpectedID  string `json:"-"`
-	ID          string `json:"id"`
-	UserID      string `json:"userId"`
-	AuthVersion int    `json:"authVersion"`
-	CSRFToken   string `json:"csrfToken"`
-	ExpiresAt   int64  `json:"expiresAt"`
-	Reason      string `json:"reason,omitempty"`
+	ExpectedID        string `json:"-"`
+	ID                string `json:"id"`
+	UserID            string `json:"userId"`
+	AuthVersion       int    `json:"authVersion"`
+	CSRFToken         string `json:"csrfToken"`
+	ExpiresAt         int64  `json:"expiresAt"`
+	CreatedAt         int64  `json:"createdAt,omitempty"`
+	AbsoluteExpiresAt int64  `json:"absoluteExpiresAt,omitempty"`
+	LastActivityAt    int64  `json:"lastActivityAt,omitempty"`
+	Reason            string `json:"reason,omitempty"`
 }
 
 type BrowserStore interface {
 	CreateBrowserSession(context.Context, BrowserSession) error
 	GetBrowserSession(context.Context, string) (BrowserSession, error)
+	RenewBrowserSession(context.Context, string, int, time.Duration) (BrowserSession, error)
 	RevokeBrowserSession(context.Context, string) error
 	SubscribeBrowserSessions(context.Context, string) (<-chan struct{}, func(), error)
 }
@@ -62,7 +66,7 @@ return 1
 `)
 
 func (r *Redis) CreateBrowserSession(ctx context.Context, rec BrowserSession) error {
-	if rec.ID == "" || rec.UserID == "" || rec.CSRFToken == "" || rec.Reason != "" || rec.ExpiresAt <= time.Now().UnixMilli() {
+	if rec.ID == "" || rec.UserID == "" || rec.CSRFToken == "" || rec.Reason != "" || (rec.ExpiresAt <= time.Now().UnixMilli() || (rec.AbsoluteExpiresAt > 0 && (rec.AbsoluteExpiresAt < rec.ExpiresAt || rec.AbsoluteExpiresAt <= time.Now().UnixMilli()))) {
 		return ErrBrowserSessionInvalid
 	}
 	data, err := json.Marshal(rec)
@@ -102,7 +106,7 @@ func (r *Redis) GetBrowserSession(ctx context.Context, id string) (BrowserSessio
 	if err = json.Unmarshal([]byte(value), &rec); err != nil {
 		return rec, err
 	}
-	if rec.ExpiresAt <= time.Now().UnixMilli() {
+	if rec.ExpiresAt <= time.Now().UnixMilli() || (rec.AbsoluteExpiresAt > 0 && rec.AbsoluteExpiresAt <= time.Now().UnixMilli()) {
 		return rec, ErrBrowserSessionInvalid
 	}
 	if rec.Reason == "replaced" {
@@ -163,4 +167,49 @@ func (r *Redis) SubscribeBrowserSessions(ctx context.Context, userID string) (<-
 		}
 	}()
 	return events, closeSub, nil
+}
+
+// Redis TIME is authoritative for renewal; the caller supplies no activity timestamp.
+// All rejection checks precede writes, so a delayed activity cannot restore a
+// logged-out/replaced session or a user mapping that has already expired.
+var renewBrowserSession = redis.NewScript(`
+local value = redis.call('GET', KEYS[1])
+if not value then return 'invalid' end
+local record = cjson.decode(value)
+local clock = redis.call('TIME')
+local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
+if record.id ~= ARGV[1] or tonumber(record.expiresAt) <= now then return 'invalid' end
+if record.absoluteExpiresAt and tonumber(record.absoluteExpiresAt) <= now then return 'invalid' end
+if record.reason == 'replaced' then return 'replaced' end
+if record.reason then return 'invalid' end
+local userkey = ARGV[4] .. record.userId
+if redis.call('GET', userkey) ~= record.id then return 'replaced' end
+local version = tonumber(redis.call('GET', ARGV[5] .. record.userId) or '-1')
+if tonumber(record.authVersion) ~= tonumber(ARGV[2]) or tonumber(record.authVersion) < version then return 'invalid' end
+if not record.absoluteExpiresAt then return value end
+record.lastActivityAt = math.max(tonumber(record.lastActivityAt or 0), now)
+record.expiresAt = math.min(tonumber(record.absoluteExpiresAt), math.max(tonumber(record.expiresAt), now + tonumber(ARGV[3])))
+local renewed = cjson.encode(record)
+redis.call('SET', KEYS[1], renewed, 'PXAT', record.expiresAt)
+redis.call('SET', userkey, record.id, 'PXAT', record.expiresAt)
+return renewed
+`)
+
+func (r *Redis) RenewBrowserSession(ctx context.Context, id string, authVersion int, idleTTL time.Duration) (BrowserSession, error) {
+	var rec BrowserSession
+	if id == "" || idleTTL.Milliseconds() <= 0 {
+		return rec, ErrBrowserSessionInvalid
+	}
+	value, err := renewBrowserSession.Run(ctx, r.client, []string{browserPrefix + id}, id, authVersion, idleTTL.Milliseconds(), browserUserPrefix, "ss:browser:version:").Text()
+	if err != nil {
+		return rec, err
+	}
+	switch value {
+	case "invalid":
+		return rec, ErrBrowserSessionInvalid
+	case "replaced":
+		return rec, ErrBrowserSessionReplaced
+	}
+	err = json.Unmarshal([]byte(value), &rec)
+	return rec, err
 }

@@ -42,12 +42,14 @@ func (e *RateLimitError) Error() string { return ErrRateLimited.Error() }
 func (e *RateLimitError) Unwrap() error { return ErrRateLimited }
 
 type Service struct {
-	limiter    LoginLimiter
-	users      UserRepository
-	sessions   SessionRepository
-	jwtSecret  []byte
-	accessTTL  time.Duration
-	refreshTTL time.Duration
+	limiter            LoginLimiter
+	users              UserRepository
+	sessions           SessionRepository
+	jwtSecret          []byte
+	accessTTL          time.Duration
+	refreshTTL         time.Duration
+	browserIdleTTL     time.Duration
+	browserAbsoluteTTL time.Duration
 }
 
 type UserView struct {
@@ -70,7 +72,17 @@ type Result struct {
 }
 
 func NewService(users UserRepository, sessions SessionRepository, jwtSecret string, accessTTL, refreshTTL time.Duration) *Service {
-	return &Service{users: users, sessions: sessions, jwtSecret: []byte(jwtSecret), accessTTL: accessTTL, refreshTTL: refreshTTL}
+	return &Service{users: users, sessions: sessions, jwtSecret: []byte(jwtSecret), accessTTL: accessTTL, refreshTTL: refreshTTL, browserIdleTTL: 30 * time.Minute, browserAbsoluteTTL: 8 * time.Hour}
+}
+
+// SetBrowserSessionTTL configures browser policy before serving requests.
+// Browser cookie sessions are independent of legacy access/refresh token TTLs.
+func (s *Service) SetBrowserSessionTTL(idle, absolute time.Duration) error {
+	if idle.Milliseconds() <= 0 || absolute.Milliseconds() <= 0 || idle > absolute {
+		return fmt.Errorf("SESSION_IDLE_TTL dan SESSION_ABSOLUTE_TTL wajib positif (minimal 1ms), idle tidak melebihi absolute")
+	}
+	s.browserIdleTTL, s.browserAbsoluteTTL = idle, absolute
+	return nil
 }
 
 // SetLoginLimiter configures shared rate limiting before the service begins serving requests.

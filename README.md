@@ -1,6 +1,6 @@
 # Standard Setting API
 
-Backend Go/Fiber untuk aplikasi Standard Setting. MongoDB menyimpan akun, proyek, butir, putaran/respons, kontak terpisah, evaluasi, batch dampak dan audit; Redis menyimpan refresh session serta counter login atomik. Base path API: `/api/v1`, alamat fallback `http://localhost:8080`; konfigurasi lokal pengguna memakai `http://127.0.0.1:18081`.
+Backend Go/Fiber untuk aplikasi Standard Setting. MongoDB menyimpan akun, proyek, butir, putaran/respons, kontak terpisah, evaluasi, batch dampak dan audit; Redis menyimpan sesi cookie browser, penanda satu login aktif per akun, serta counter login atomik. Sesi baru memakai idle 30 menit dan batas total 8 jam, dengan perpanjangan dari aktivitas pengguna melalui `POST /auth/activity`; lihat [kontrak sesi](docs/AUTH-SESSION-RENEWAL-2026-10-29.md). Base path API: `/api/v1`, alamat fallback `http://localhost:8080`; konfigurasi lokal pengguna memakai `http://127.0.0.1:18081`.
 
 ## Lokal
 

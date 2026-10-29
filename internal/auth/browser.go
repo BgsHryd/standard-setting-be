@@ -14,12 +14,14 @@ import (
 var ErrSessionReplaced = errors.New("Anda telah login di perangkat lain")
 
 type BrowserResult struct {
-	CookieToken string   `json:"-"`
-	SessionID   string   `json:"sessionId"`
-	CSRFToken   string   `json:"csrfToken"`
-	AuthVersion int      `json:"authVersion"`
-	ExpiresAt   int64    `json:"expiresAt"`
-	User        UserView `json:"user"`
+	CookieToken       string   `json:"-"`
+	SessionID         string   `json:"sessionId"`
+	CSRFToken         string   `json:"csrfToken"`
+	AuthVersion       int      `json:"authVersion"`
+	ExpiresAt         int64    `json:"expiresAt"`
+	AbsoluteExpiresAt int64    `json:"absoluteExpiresAt"`
+	CreatedAt         int64    `json:"createdAt,omitempty"`
+	User              UserView `json:"user"`
 }
 
 func browserID(token string) string {
@@ -56,7 +58,8 @@ func (s *Service) newBrowserSession(ctx context.Context, user domain.User, login
 	if err != nil {
 		return BrowserResult{}, ErrSecurityUnavailable
 	}
-	rec := session.BrowserSession{ID: browserID(token), UserID: user.ID, AuthVersion: user.AuthVersion, CSRFToken: csrf, ExpiresAt: time.Now().Add(s.accessTTL).UnixMilli()}
+	now := time.Now()
+	rec := session.BrowserSession{ID: browserID(token), UserID: user.ID, AuthVersion: user.AuthVersion, CSRFToken: csrf, CreatedAt: now.UnixMilli(), LastActivityAt: now.UnixMilli(), ExpiresAt: now.Add(s.browserIdleTTL).UnixMilli(), AbsoluteExpiresAt: now.Add(s.browserAbsoluteTTL).UnixMilli()}
 	if len(expectedID) > 0 {
 		rec.ExpectedID = expectedID[0]
 	}
@@ -118,6 +121,40 @@ func (s *Service) BrowserState(ctx context.Context, token string) (BrowserResult
 	return s.browserResult(ctx, rec, user)
 }
 
+// BrowserActivity explicitly renews user activity; normal reads never call it.
+func (s *Service) BrowserActivity(ctx context.Context, token string) (BrowserResult, error) {
+	rec, user, err := s.AuthenticateBrowser(ctx, token)
+	if err != nil {
+		return BrowserResult{}, err
+	}
+	// Resolve live public metadata before changing Redis, so repository outages
+	// cannot be reported as a successful renewal.
+	result, err := s.browserResult(ctx, rec, user)
+	if err != nil {
+		return BrowserResult{}, err
+	}
+	store, err := s.browserStore()
+	if err != nil {
+		return BrowserResult{}, err
+	}
+	renewed, err := store.RenewBrowserSession(ctx, rec.ID, user.AuthVersion, s.browserIdleTTL)
+	if errors.Is(err, session.ErrBrowserSessionReplaced) {
+		return BrowserResult{}, ErrSessionReplaced
+	}
+	if errors.Is(err, session.ErrBrowserSessionInvalid) {
+		return BrowserResult{}, ErrInvalidSession
+	}
+	if err != nil {
+		return BrowserResult{}, ErrSecurityUnavailable
+	}
+	result.ExpiresAt = renewed.ExpiresAt
+	result.AbsoluteExpiresAt = renewed.AbsoluteExpiresAt
+	if result.AbsoluteExpiresAt == 0 {
+		result.AbsoluteExpiresAt = renewed.ExpiresAt
+	}
+	return result, nil
+}
+
 func (s *Service) browserResult(ctx context.Context, rec session.BrowserSession, user domain.User) (BrowserResult, error) {
 	view := userView(user)
 	if contacts, ok := s.users.(interface {
@@ -129,7 +166,11 @@ func (s *Service) browserResult(ctx context.Context, rec session.BrowserSession,
 			return BrowserResult{}, ErrSecurityUnavailable
 		}
 	}
-	return BrowserResult{SessionID: rec.ID, CSRFToken: rec.CSRFToken, AuthVersion: rec.AuthVersion, ExpiresAt: rec.ExpiresAt, User: view}, nil
+	absolute := rec.AbsoluteExpiresAt
+	if absolute == 0 {
+		absolute = rec.ExpiresAt
+	} // Pre-upgrade sessions keep their fixed deadline.
+	return BrowserResult{SessionID: rec.ID, CSRFToken: rec.CSRFToken, AuthVersion: rec.AuthVersion, ExpiresAt: rec.ExpiresAt, AbsoluteExpiresAt: absolute, CreatedAt: rec.CreatedAt, User: view}, nil
 }
 
 func (s *Service) LogoutBrowser(ctx context.Context, token string) error {

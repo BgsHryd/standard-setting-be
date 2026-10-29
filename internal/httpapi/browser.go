@@ -24,7 +24,11 @@ func (h *Handler) cookieName() string {
 }
 
 func (h *Handler) setBrowserCookie(c *fiber.Ctx, result auth.BrowserResult) {
-	c.Cookie(&fiber.Cookie{Name: h.cookieName(), Value: result.CookieToken, Path: "/", HTTPOnly: true, Secure: h.secureCookies, SameSite: "Lax", MaxAge: max(1, int(math.Ceil(time.Until(time.UnixMilli(result.ExpiresAt)).Seconds()))), Expires: time.UnixMilli(result.ExpiresAt)})
+	absolute := result.AbsoluteExpiresAt
+	if absolute == 0 {
+		absolute = result.ExpiresAt
+	}
+	c.Cookie(&fiber.Cookie{Name: h.cookieName(), Value: result.CookieToken, Path: "/", HTTPOnly: true, Secure: h.secureCookies, SameSite: "Lax", MaxAge: max(1, int(math.Ceil(time.Until(time.UnixMilli(absolute)).Seconds()))), Expires: time.UnixMilli(absolute)})
 }
 
 func (h *Handler) browserOrigin(c *fiber.Ctx) error {
@@ -59,6 +63,20 @@ func (h *Handler) browserState(c *fiber.Ctx) error {
 	if err != nil {
 		return authError(c, err, 401)
 	}
+	return success(c, result)
+}
+
+func (h *Handler) browserActivity(c *fiber.Ctx) error {
+	// The shared cookie may now belong to another tab's identity. A fingerprint
+	// is mandatory here so stale activity cannot keep that newer login alive.
+	if c.Get("X-Session-ID") == "" {
+		return c.Status(409).JSON(fiber.Map{"status": "error", "code": "SESSION_CHANGED", "message": "Sesi akun berubah. Muat ulang halaman."})
+	}
+	result, err := h.auth.BrowserActivity(c.UserContext(), c.Cookies(h.cookieName()))
+	if err != nil {
+		return authError(c, err, 401)
+	}
+	// No cookie rotation: a delayed response must never overwrite a newer login.
 	return success(c, result)
 }
 
@@ -113,7 +131,7 @@ func (h *Handler) browserEvents(c *fiber.Ctx) error {
 			case <-deadline.C:
 			}
 			checkCtx, stop := context.WithTimeout(ctx, 5*time.Second)
-			_, _, err := h.auth.AuthenticateBrowser(checkCtx, token)
+			current, _, err := h.auth.AuthenticateBrowser(checkCtx, token)
 			stop()
 			if err != nil {
 				code, message := "SESSION_EXPIRED", "Sesi Anda telah berakhir. Silakan masuk kembali."
@@ -128,6 +146,15 @@ func (h *Handler) browserEvents(c *fiber.Ctx) error {
 				_ = w.Flush()
 				return
 			}
+			// A renewal can move the authoritative deadline beyond the timer that
+			// opened this stream. Re-arm after each read; reads never renew it.
+			if !deadline.Stop() {
+				select {
+				case <-deadline.C:
+				default:
+				}
+			}
+			deadline.Reset(max(time.Millisecond, time.Until(time.UnixMilli(current.ExpiresAt))))
 			if _, err = fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
 				return
 			}

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Standard Setting API
-  version: '2026-10-26'
+  version: '2026-10-29'
   description: >-
     Kontrak statis berdasarkan seluruh file produksi internal/httpapi/*.go dan model aktif. Base path /api/v1.
     JSON sukses memakai HTTP 200 dan envelope status/data; unduhan CSV/XLSX mengirim berkas langsung. Akun
@@ -68,7 +68,7 @@ paths:
       operationId: login
       summary: Login dengan username dan password
       description: >-
-        User aktif dan bcrypt harus cocok. Membuat cookie HttpOnly dan sesi Redis absolut 15 menit. Login terbaru menggantikan sesi lama. Origin yang diizinkan dan Content-Type application/json wajib. Counter atomik
+        User aktif dan bcrypt harus cocok. Membuat cookie HttpOnly hingga batas absolut (default 8 jam), dengan sesi Redis idle default 30 menit. Aktivitas eksplisit dapat memperpanjang batas idle hingga batas absolut. Login terbaru menggantikan sesi lama. Origin yang diizinkan dan Content-Type application/json wajib. Counter atomik
         Redis: 5 percobaan/username dan 20/IP per15menit; sukses mereset username, IP tetap membatasi
         spraying. Header IP hanya dipercaya dari proxy yang dikonfigurasi. Kegagalan tidak membocorkan
         username terdaftar. Login/gagal login diaudit tanpa rahasia.
@@ -106,6 +106,39 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           $ref: '#/components/responses/SecurityUnavailable'
+  /auth/activity:
+    post:
+      tags: [Auth]
+      operationId: browserActivity
+      summary: Perpanjang deadline idle dari interaksi pengguna
+      description: >-
+        Memvalidasi user MongoDB aktif dan authVersion, lalu memperbarui record dan TTL
+        mapping sesi Redis secara atomik. Default idle 30 menit, absolute 8 jam sejak login;
+        SESSION_IDLE_TTL dan SESSION_ABSOLUTE_TTL dapat dikonfigurasi. Tidak merotasi
+        credential dan tidak mengirim Set-Cookie. Sesi lama tanpa absoluteExpiresAt
+        mempertahankan deadline tetap semula. GET/session, SSE dan heartbeat tidak memperpanjang sesi.
+      parameters:
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/CSRFToken'
+        - $ref: '#/components/parameters/RequiredSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+            example: {}
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Origin atau X-CSRF-Token tidak valid
+        '409':
+          description: X-Session-ID hilang atau berbeda dari cookie aktif; code SESSION_CHANGED
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
   /auth/logout:
     post:
       tags: [Auth]
@@ -126,7 +159,7 @@ paths:
       tags: [Auth]
       operationId: browserEvents
       summary: Notifikasi sesi melalui SSE dengan cookie
-      description: Event session memuat sessionId, code dan message. SESSION_REPLACED menampilkan Anda telah login di perangkat lain. Tidak ada credential dalam URL.
+      description: Event session memuat sessionId, code dan message. SESSION_REPLACED menampilkan Anda telah login di perangkat lain. Tidak ada credential dalam URL. Stream membaca ulang deadline Redis setelah renewal; heartbeat tidak memperpanjang sesi.
       responses:
         '200':
           description: Stream event dan heartbeat
@@ -2888,6 +2921,13 @@ components:
       schema:
         type: "string"
       description: "sessionId metadata tab. Jika dikirim dan tidak cocok dengan sesi cookie, server mengembalikan SESSION_CHANGED."
+    RequiredSessionId:
+      name: "X-Session-ID"
+      in: "header"
+      required: true
+      schema:
+        type: "string"
+      description: "sessionId metadata tab yang cocok dengan cookie aktif; wajib untuk auth/activity."
     ProjectId:
       name: id
       in: path
@@ -3213,7 +3253,15 @@ components:
         expiresAt:
           type: integer
           format: int64
-          description: Waktu kedaluwarsa absolut, Unix milliseconds
+          description: Deadline idle efektif (dibatasi absoluteExpiresAt), Unix milliseconds
+        absoluteExpiresAt:
+          type: integer
+          format: int64
+          description: Batas absolut sejak autentikasi, Unix milliseconds; sesi legacy memakai deadline tetap semula
+        createdAt:
+          type: integer
+          format: int64
+          description: Waktu autentikasi Unix milliseconds; dapat tidak ada untuk sesi legacy
         user:
           $ref: '#/components/schemas/UserView'
     Claims:
@@ -3724,6 +3772,26 @@ components:
         generatedAt:
           type: string
           format: date-time
+    MonitoringItemGuidance:
+      type: object
+      required: [itemId, range, state]
+      properties:
+        itemId:
+          type: string
+        range:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+          description: Selisih maksimum dan minimum persentase asli pada ItemStatistics snapshot final, tanpa pembulatan; null untuk waiting/unavailable.
+        state:
+          type: string
+          enum: [waiting, priority, agreement, unavailable]
+          description: >-
+            waiting jika putaran belum finalized, termasuk putaran aktif hasil rollback meskipun
+            snapshot lama tersimpan. priority jika rentang >=20 poin persentase, agreement jika
+            rentang <20. unavailable jika snapshot/statistik butir tidak tersedia atau tidak valid
+            (batas harus finite dalam 0..100, maksimum >= minimum, panelistCount positif).
     Monitoring:
       type: object
       properties:
@@ -3750,6 +3818,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Item'
+        itemGuidance:
+          type: array
+          description: >-
+            Arahan PIC per butir sesuai urutan items pada putaran yang dipilih. Sumber hanya statistik
+            per butir dari snapshot final, tanpa fallback jawaban live atau tambahan snapshot mentah.
+            Kosong jika items kosong. Tidak mengubah kategori sebaran atau ambang >10 dialog panelis.
+          items:
+            $ref: '#/components/schemas/MonitoringItemGuidance'
         statistics:
           type: object
           nullable: true
