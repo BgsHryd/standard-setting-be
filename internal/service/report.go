@@ -302,7 +302,7 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 			if !sub.Available && !sub.Legacy {
 				continue
 			}
-			st := sub.Statistics
+			st := domain.SampleStatistics(sub.Statistics)
 			var count, cutoff, operational, mean, median, sd, sample, se, minimum, maximum any
 			if sub.Available {
 				count = st.PanelistCount
@@ -310,7 +310,7 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 				operational = st.OperationalCutoff
 				mean = st.Mean
 				median = st.Median
-				sd = st.StandardDev
+				sd = st.PopulationStandardDeviation
 				sample = st.SampleStandardDeviation
 				se = st.StandardError
 				minimum = st.Minimum

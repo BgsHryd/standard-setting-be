@@ -140,21 +140,23 @@ type Item struct {
 }
 
 type ItemResult struct {
-	Revision                int       `json:"revision" bson:"revision"`
-	SampleStandardDeviation *float64  `json:"sampleStandardDeviation" bson:"sampleStandardDeviation"`
-	StandardError           *float64  `json:"standardError" bson:"standardError"`
-	OperationalCutoff       float64   `json:"operationalCutoff" bson:"operationalCutoff"`
-	RoundingPolicy          string    `json:"roundingPolicy" bson:"roundingPolicy"`
-	PanelistIDs             []string  `json:"panelistIds,omitempty" bson:"panelistIds,omitempty"`
-	RoundNumber             int       `json:"roundNumber" bson:"roundNumber"`
-	Cutoff                  float64   `json:"cutoff" bson:"cutoff"`
-	Mean                    float64   `json:"mean" bson:"mean"`
-	Median                  float64   `json:"median" bson:"median"`
-	StandardDev             float64   `json:"standardDeviation" bson:"standardDeviation"`
-	Minimum                 float64   `json:"minimum" bson:"minimum"`
-	Maximum                 float64   `json:"maximum" bson:"maximum"`
-	PanelistCount           int       `json:"panelistCount" bson:"panelistCount"`
-	CompletedAt             time.Time `json:"completedAt" bson:"completedAt"`
+	StandardDeviationMethod     string    `json:"standardDeviationMethod" bson:"standardDeviationMethod,omitempty"`
+	PopulationStandardDeviation *float64  `json:"populationStandardDeviation" bson:"populationStandardDeviation,omitempty"`
+	Revision                    int       `json:"revision" bson:"revision"`
+	SampleStandardDeviation     *float64  `json:"sampleStandardDeviation" bson:"sampleStandardDeviation"`
+	StandardError               *float64  `json:"standardError" bson:"standardError"`
+	OperationalCutoff           float64   `json:"operationalCutoff" bson:"operationalCutoff"`
+	RoundingPolicy              string    `json:"roundingPolicy" bson:"roundingPolicy"`
+	PanelistIDs                 []string  `json:"panelistIds,omitempty" bson:"panelistIds,omitempty"`
+	RoundNumber                 int       `json:"roundNumber" bson:"roundNumber"`
+	Cutoff                      float64   `json:"cutoff" bson:"cutoff"`
+	Mean                        float64   `json:"mean" bson:"mean"`
+	Median                      float64   `json:"median" bson:"median"`
+	StandardDev                 float64   `json:"standardDeviation" bson:"standardDeviation"`
+	Minimum                     float64   `json:"minimum" bson:"minimum"`
+	Maximum                     float64   `json:"maximum" bson:"maximum"`
+	PanelistCount               int       `json:"panelistCount" bson:"panelistCount"`
+	CompletedAt                 time.Time `json:"completedAt" bson:"completedAt"`
 }
 
 type Round struct {

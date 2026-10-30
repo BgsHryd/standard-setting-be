@@ -20,7 +20,7 @@ func (m *Mongo) SaveQuestionInstructions(ctx context.Context, expected int, valu
 	var result domain.QuestionInstructionConfig
 	err := m.database.Collection("app_config").FindOneAndUpdate(ctx,
 		bson.M{"_id": "question-instructions", "version": expected},
-		bson.M{"$set": bson.M{"instructions": value.Instructions, "updatedAt": value.UpdatedAt}, "$inc": bson.M{"version": 1}},
+		bson.M{"$set": bson.M{"instructions": value.Instructions, "tampilkan_soal_contoh": value.ShowExamples, "updatedAt": value.UpdatedAt}, "$inc": bson.M{"version": 1}},
 		options.FindOneAndUpdate().SetUpsert(expected == 0).SetReturnDocument(options.After)).Decode(&result)
 	if errors.Is(err, mongo.ErrNoDocuments) || mongo.IsDuplicateKeyError(err) {
 		return result, domain.ErrInstructionConflict

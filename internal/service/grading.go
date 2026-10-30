@@ -266,6 +266,7 @@ func publicRound(r domain.Round) domain.Round {
 
 type PanelistForm struct {
 	QuestionInstructions map[domain.QuestionType]string `json:"questionInstructions"`
+	ShowExamples         map[domain.QuestionType]bool   `json:"tampilkan_soal_contoh"`
 	RoundReview          *RoundReview                   `json:"roundReview"`
 	RoundOutcomes        []RoundOutcome                 `json:"roundOutcomes"`
 	RoundStartRequired   bool                           `json:"roundStartRequired"`
@@ -384,7 +385,7 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 	for i := range history {
 		history[i] = publicRound(history[i])
 	}
-	return PanelistForm{QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
+	return PanelistForm{ShowExamples: questionConfig.ShowExamples, QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
 }
 
 func (s *Service) SaveSubmission(ctx context.Context, userID, name, projectID, subjectCode string, number int, itemID string, answer domain.Answer) (domain.Submission, error) {

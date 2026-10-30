@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-func TestStatisticsKnownPopulationDataset(t *testing.T) {
+func TestStatisticsKnownSampleDataset(t *testing.T) {
 	s := calculateStatistics([]float64{40, 60, 80})
-	if s.Mean != 60 || s.Minimum != 40 || s.Maximum != 80 || math.Abs(s.StandardDev-math.Sqrt(800.0/3)) > 1e-9 {
+	if s.Mean != 60 || s.Minimum != 40 || s.Maximum != 80 || math.Abs(s.StandardDev-20) > 1e-9 {
 		t.Fatalf("wrong population statistics %+v", s)
 	}
 }

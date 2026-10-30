@@ -341,7 +341,7 @@ func (s *Service) ReviewSubmission(ctx context.Context, user, project, subject s
 }
 
 type ItemFeedback struct {
-	StandardDeviation float64   `json:"standardDeviation"`
+	StandardDeviation *float64  `json:"standardDeviation"`
 	ItemID            string    `json:"itemId"`
 	RoundNumber       int       `json:"roundNumber"`
 	Revision          int       `json:"revision"`
@@ -355,8 +355,8 @@ type ItemFeedback struct {
 }
 
 func snapshotFeedback(snap domain.RoundSnapshot, itemID, userID string) ItemFeedback {
-	stats := snap.ItemStatistics[itemID]
-	f := ItemFeedback{ItemID: itemID, RoundNumber: snap.RoundNumber, Revision: snap.Revision, N: stats.PanelistCount, StandardDeviation: stats.StandardDev, Median: stats.Median, Minimum: stats.Minimum, Maximum: stats.Maximum, Values: []float64{}, SmallPanel: stats.PanelistCount < 3}
+	stats := domain.SampleStatistics(snap.ItemStatistics[itemID])
+	f := ItemFeedback{ItemID: itemID, RoundNumber: snap.RoundNumber, Revision: snap.Revision, N: stats.PanelistCount, StandardDeviation: stats.SampleStandardDeviation, Median: stats.Median, Minimum: stats.Minimum, Maximum: stats.Maximum, Values: []float64{}, SmallPanel: stats.PanelistCount < 3}
 	for _, row := range snap.Submissions {
 		if row.ItemID != itemID || !contains(snap.PanelistIDs, row.PanelistID) {
 			continue

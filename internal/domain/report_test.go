@@ -7,7 +7,7 @@ import (
 
 func TestComputeStatisticsSampleAndRounding(t *testing.T) {
 	r := ComputeStatistics([]float64{62, 64, 66, 68, 70}, "ceil_1pp")
-	if r.Mean != 66 || math.Abs(r.StandardDev-math.Sqrt(8)) > 1e-10 || r.SampleStandardDeviation == nil || math.Abs(*r.SampleStandardDeviation-math.Sqrt(10)) > 1e-10 || r.StandardError == nil || math.Abs(*r.StandardError-math.Sqrt(2)) > 1e-10 {
+	if r.Mean != 66 || math.Abs(r.StandardDev-math.Sqrt(10)) > 1e-10 || r.PopulationStandardDeviation == nil || math.Abs(*r.PopulationStandardDeviation-math.Sqrt(8)) > 1e-10 || r.SampleStandardDeviation == nil || math.Abs(*r.SampleStandardDeviation-math.Sqrt(10)) > 1e-10 || r.StandardError == nil || math.Abs(*r.StandardError-math.Sqrt(2)) > 1e-10 {
 		t.Fatalf("wrong sample statistics: %+v", r)
 	}
 	for _, tc := range []struct {

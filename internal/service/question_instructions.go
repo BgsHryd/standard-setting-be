@@ -15,7 +15,7 @@ type questionInstructionStore interface {
 }
 
 func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInstructionConfig, error) {
-	result := domain.QuestionInstructionConfig{ID: "question-instructions", Instructions: domain.DefaultQuestionInstructions()}
+	result := domain.QuestionInstructionConfig{ID: "question-instructions", Instructions: domain.DefaultQuestionInstructions(), ShowExamples: domain.DefaultQuestionExamples()}
 	st, ok := s.store.(questionInstructionStore)
 	if !ok {
 		return result, nil
@@ -28,6 +28,9 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 		return result, err
 	}
 	result.Version, result.UpdatedAt = saved.Version, saved.UpdatedAt
+	for kind := range result.ShowExamples {
+		result.ShowExamples[kind] = saved.ShowExamples[kind]
+	}
 	for kind := range result.Instructions {
 		if html, e := domain.SanitizeQuestionInstruction(saved.Instructions[kind]); e == nil {
 			result.Instructions[kind] = html
@@ -36,7 +39,7 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 	return result, nil
 }
 
-func (s *Service) SaveQuestionInstructions(ctx context.Context, actor string, expected int, content map[domain.QuestionType]string) (domain.QuestionInstructionConfig, error) {
+func (s *Service) SaveQuestionInstructions(ctx context.Context, actor string, expected int, content map[domain.QuestionType]string, examples ...map[domain.QuestionType]bool) (domain.QuestionInstructionConfig, error) {
 	var result domain.QuestionInstructionConfig
 	if expected < 0 {
 		return result, errors.New("versi konfigurasi tidak valid")
@@ -62,7 +65,23 @@ func (s *Service) SaveQuestionInstructions(ctx context.Context, actor string, ex
 		if !ok {
 			return errors.New("penyimpanan konfigurasi tidak tersedia")
 		}
-		result, err = st.SaveQuestionInstructions(tx, expected, domain.QuestionInstructionConfig{ID: "question-instructions", Instructions: clean, UpdatedAt: time.Now().UTC()})
+		flags := domain.DefaultQuestionExamples()
+		if len(examples) > 0 && examples[0] != nil {
+			for kind, enabled := range examples[0] {
+				if _, allowed := flags[kind]; !allowed {
+					return errors.New("tampilkan_soal_contoh hanya tersedia untuk PGK MCMA dan BS")
+				}
+				flags[kind] = enabled
+			}
+		} else {
+			// HTML-only clients must preserve the existing example configuration.
+			current, readErr := s.QuestionInstructions(tx)
+			if readErr != nil {
+				return readErr
+			}
+			flags = current.ShowExamples
+		}
+		result, err = st.SaveQuestionInstructions(tx, expected, domain.QuestionInstructionConfig{ID: "question-instructions", Instructions: clean, ShowExamples: flags, UpdatedAt: time.Now().UTC()})
 		if err != nil {
 			return err
 		}

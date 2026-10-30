@@ -18,7 +18,12 @@ type QuestionInstructionConfig struct {
 	ID           string                  `json:"-" bson:"_id"`
 	Version      int                     `json:"version" bson:"version"`
 	Instructions map[QuestionType]string `json:"instructions" bson:"instructions"`
+	ShowExamples map[QuestionType]bool   `json:"tampilkan_soal_contoh" bson:"tampilkan_soal_contoh"`
 	UpdatedAt    time.Time               `json:"updatedAt" bson:"updatedAt"`
+}
+
+func DefaultQuestionExamples() map[QuestionType]bool {
+	return map[QuestionType]bool{QuestionTypeComplexMCMA: false, QuestionTypeComplexBS: false}
 }
 
 func DefaultQuestionInstructions() map[QuestionType]string {

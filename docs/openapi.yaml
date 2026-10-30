@@ -1000,7 +1000,7 @@ paths:
       summary: Statistik dan respons butir tested
       description: >-
         Membaca snapshot statistik putaran final dan hanya respons putaran tersebut. Cutoff sama dengan mean,
-        SD populasi, panelistCount panelis unik. Data tested lama tanpa snapshot menghasilkan statistics null,
+        SD sampel (n−1), panelistCount panelis unik. Data tested lama tanpa snapshot menghasilkan statistics null,
         responses kosong dan warning; tidak menghitung angka buatan.
       responses:
         '200':
@@ -3540,6 +3540,19 @@ components:
           readOnly: true
         instructions:
           $ref: '#/components/schemas/QuestionInstructions'
+        tampilkan_soal_contoh:
+          $ref: '#/components/schemas/QuestionExampleFlags'
+    QuestionExampleFlags:
+      type: object
+      additionalProperties: false
+      description: Contoh opsi interaktif khusus MCMA/BS. Default false untuk konfigurasi lama. PUT tanpa field ini mempertahankan nilai existing; map yang dikirim menggantikan kedua pengaturan, key yang tidak dikirim menjadi false.
+      properties:
+        pilihan_ganda_kompleks_mcma:
+          type: boolean
+          default: false
+        pilihan_ganda_kompleks_bs:
+          type: boolean
+          default: false
     QuestionInstructions:
       type: object
       additionalProperties: false
@@ -3628,7 +3641,17 @@ components:
         standardDeviation:
           type: number
           format: double
-          description: SD populasi deskriptif; tetap dibedakan dari SD sampel.
+          nullable: true
+          description: SD sampel dengan pembagi n−1 (STDEV.S); null bila n<2. Snapshot lama dinormalisasi saat dibaca tanpa menulis ulang hasil sumber.
+        standardDeviationMethod:
+          type: string
+          enum: [sample]
+          description: Metode SD utama. Marker BSON absent pada snapshot lama berarti nilai tersimpan masih populasi.
+        populationStandardDeviation:
+          type: number
+          format: double
+          nullable: true
+          description: SD populasi terpisah untuk kolom laporan yang secara eksplisit berlabel populasi; bukan SD utama.
         minimum:
           type: number
           format: double
@@ -4185,7 +4208,8 @@ components:
           minimum: 0
         standardDeviation:
           type: number
-          description: Simpangan baku populasi dalam poin persentase, dari snapshot final.
+          nullable: true
+          description: Simpangan baku sampel (n−1) dalam poin persentase, dari snapshot final yang dinormalisasi saat dibaca; null bila n<2.
         median:
           type: number
           format: double
@@ -4394,6 +4418,8 @@ components:
       properties:
         questionInstructions:
           $ref: '#/components/schemas/QuestionInstructions'
+        tampilkan_soal_contoh:
+          $ref: '#/components/schemas/QuestionExampleFlags'
         roundReview:
           allOf:
             - $ref: '#/components/schemas/RoundReview'

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -119,7 +120,7 @@ func TestMonitoringUsesCompleteRealResponsesAndHistory(t *testing.T) {
 	}
 	fillRound(t, ctx, s, p, 1, 0)
 	full, err := s.Monitoring(ctx, p.ID, "MAT")
-	if err != nil || full.Statistics == nil || full.Statistics.Mean != 71.25 || full.Statistics.StandardDev != 1.25 || full.TotalDone != 6 || !full.CanFinalize {
+	if err != nil || full.Statistics == nil || full.Statistics.Mean != 71.25 || math.Abs(full.Statistics.StandardDev-1.25*math.Sqrt(2)) > 1e-10 || full.TotalDone != 6 || !full.CanFinalize {
 		t.Fatalf("wrong complete statistics: %+v %v", full, err)
 	}
 	if _, err := s.PreviewPanelist(ctx, p.ID, "MAT", 1, "pic"); err == nil {
