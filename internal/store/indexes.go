@@ -17,7 +17,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 	}{
 		{"users", []mongo.IndexModel{{Keys: bson.D{{Key: "username", Value: 1}}, Options: options.Index().SetUnique(true)}, {Keys: bson.D{{Key: "username", Value: 1}}, Options: options.Index().SetName("username_casefold").SetUnique(true).SetCollation(&options.Collation{Locale: "en", Strength: 2})}, {Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "role", Value: 1}}}}},
 		{"subjects", []mongo.IndexModel{{Keys: bson.D{{Key: "normalizedName", Value: 1}}, Options: options.Index().SetUnique(true)}}},
-		{"projects", []mongo.IndexModel{{Keys: bson.D{{Key: "code", Value: 1}}, Options: options.Index().SetUnique(true)}, {Keys: bson.D{{Key: "status", Value: 1}}}}},
+		{"projects", []mongo.IndexModel{{Keys: bson.D{{Key: "subjects.itemIds", Value: 1}}}, {Keys: bson.D{{Key: "code", Value: 1}}, Options: options.Index().SetUnique(true)}, {Keys: bson.D{{Key: "status", Value: 1}}}}},
 		{"items", []mongo.IndexModel{{Keys: bson.D{{Key: "subjectCode", Value: 1}, {Key: "usageStatus", Value: 1}}}, {Keys: bson.D{{Key: "projectId", Value: 1}}}}},
 		{"rounds", []mongo.IndexModel{{Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "subjectCode", Value: 1}, {Key: "number", Value: 1}}, Options: options.Index().SetUnique(true)}}},
 		{"submissions", []mongo.IndexModel{{Keys: bson.D{{Key: "projectId", Value: 1}, {Key: "subjectCode", Value: 1}, {Key: "roundNumber", Value: 1}, {Key: "panelistId", Value: 1}, {Key: "itemId", Value: 1}}, Options: options.Index().SetUnique(true)}}},

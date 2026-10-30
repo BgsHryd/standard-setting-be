@@ -106,7 +106,7 @@ func (s *Service) completeResponses(ctx context.Context, p domain.Project, subje
 		if err != nil {
 			return nil, nil, err
 		}
-		if item.ProjectID != p.ID || item.SubjectCode != subject.Code {
+		if item.SubjectCode != subject.Code {
 			return nil, nil, errors.New("alokasi butir tidak sesuai proyek")
 		}
 		items = append(items, item)
@@ -265,6 +265,7 @@ func publicRound(r domain.Round) domain.Round {
 }
 
 type PanelistForm struct {
+	ReviewRangeThreshold int                            `json:"reviewRangeThreshold"`
 	QuestionInstructions map[domain.QuestionType]string `json:"questionInstructions"`
 	ShowExamples         map[domain.QuestionType]bool   `json:"tampilkan_soal_contoh"`
 	RoundReview          *RoundReview                   `json:"roundReview"`
@@ -332,13 +333,25 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 	}
 	previous := []domain.Submission{}
 	var previousRound *int
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Status == "finalized" && history[i].Number < round.Number {
-			n := history[i].Number
-			previousRound = &n
-			previous, err = s.store.ListSubmissions(ctx, projectID, subjectCode, n, userID)
-			break
+	for _, prior := range history {
+		if prior.Status != "finalized" || prior.Number != round.Number-1 {
+			continue
 		}
+		if prior.FinalSnapshot != nil && prior.FinalSnapshot.Revision != domain.RoundRevision(prior) {
+			continue
+		}
+		n := prior.Number
+		previousRound = &n
+		if prior.FinalSnapshot != nil {
+			for _, row := range prior.FinalSnapshot.Submissions {
+				if row.PanelistID == userID {
+					previous = append(previous, row)
+				}
+			}
+		} else {
+			previous, err = s.store.ListSubmissions(ctx, projectID, subjectCode, n, userID)
+		}
+		break
 	}
 	if err != nil {
 		return PanelistForm{}, err
@@ -385,7 +398,7 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 	for i := range history {
 		history[i] = publicRound(history[i])
 	}
-	return PanelistForm{ShowExamples: questionConfig.ShowExamples, QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
+	return PanelistForm{ReviewRangeThreshold: questionConfig.ReviewRangeThreshold, ShowExamples: questionConfig.ShowExamples, QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
 }
 
 func (s *Service) SaveSubmission(ctx context.Context, userID, name, projectID, subjectCode string, number int, itemID string, answer domain.Answer) (domain.Submission, error) {
@@ -494,7 +507,7 @@ func (s *Service) CompleteProject(ctx context.Context, id, confirmation string) 
 				items[i].UsageStatus = domain.ItemTested
 				items[i].UpdatedAt = now
 			}
-			if err := s.store.UpsertItems(tx, items); err != nil {
+			if err := s.store.SaveProjectItemResults(tx, p.ID, p.Name, items); err != nil {
 				return err
 			}
 			if current.Status == "active" {

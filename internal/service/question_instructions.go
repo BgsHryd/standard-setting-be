@@ -15,7 +15,7 @@ type questionInstructionStore interface {
 }
 
 func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInstructionConfig, error) {
-	result := domain.QuestionInstructionConfig{ID: "question-instructions", Instructions: domain.DefaultQuestionInstructions(), ShowExamples: domain.DefaultQuestionExamples()}
+	result := domain.QuestionInstructionConfig{ReviewRangeThreshold: domain.DefaultReviewRangeThreshold, ID: "question-instructions", Instructions: domain.DefaultQuestionInstructions(), ShowExamples: domain.DefaultQuestionExamples()}
 	st, ok := s.store.(questionInstructionStore)
 	if !ok {
 		return result, nil
@@ -28,6 +28,9 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 		return result, err
 	}
 	result.Version, result.UpdatedAt = saved.Version, saved.UpdatedAt
+	if domain.ValidReviewRangeThreshold(saved.ReviewRangeThreshold) {
+		result.ReviewRangeThreshold = saved.ReviewRangeThreshold
+	}
 	for kind := range result.ShowExamples {
 		result.ShowExamples[kind] = saved.ShowExamples[kind]
 	}
@@ -40,7 +43,18 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 }
 
 func (s *Service) SaveQuestionInstructions(ctx context.Context, actor string, expected int, content map[domain.QuestionType]string, examples ...map[domain.QuestionType]bool) (domain.QuestionInstructionConfig, error) {
+	var flags map[domain.QuestionType]bool
+	if len(examples) > 0 {
+		flags = examples[0]
+	}
+	return s.SaveQuestionInstructionSettings(ctx, actor, expected, content, flags, nil)
+}
+
+func (s *Service) SaveQuestionInstructionSettings(ctx context.Context, actor string, expected int, content map[domain.QuestionType]string, examples map[domain.QuestionType]bool, threshold *int) (domain.QuestionInstructionConfig, error) {
 	var result domain.QuestionInstructionConfig
+	if threshold != nil && !domain.ValidReviewRangeThreshold(*threshold) {
+		return result, errors.New("ambang penanda butir harus angka bulat 1–100 poin persentase")
+	}
 	if expected < 0 {
 		return result, errors.New("versi konfigurasi tidak valid")
 	}
@@ -65,9 +79,17 @@ func (s *Service) SaveQuestionInstructions(ctx context.Context, actor string, ex
 		if !ok {
 			return errors.New("penyimpanan konfigurasi tidak tersedia")
 		}
+		current, readErr := s.QuestionInstructions(tx)
+		if readErr != nil {
+			return readErr
+		}
+		effectiveThreshold := current.ReviewRangeThreshold
+		if threshold != nil {
+			effectiveThreshold = *threshold
+		}
 		flags := domain.DefaultQuestionExamples()
-		if len(examples) > 0 && examples[0] != nil {
-			for kind, enabled := range examples[0] {
+		if examples != nil {
+			for kind, enabled := range examples {
 				if _, allowed := flags[kind]; !allowed {
 					return errors.New("tampilkan_soal_contoh hanya tersedia untuk PGK MCMA dan BS")
 				}
@@ -75,13 +97,9 @@ func (s *Service) SaveQuestionInstructions(ctx context.Context, actor string, ex
 			}
 		} else {
 			// HTML-only clients must preserve the existing example configuration.
-			current, readErr := s.QuestionInstructions(tx)
-			if readErr != nil {
-				return readErr
-			}
 			flags = current.ShowExamples
 		}
-		result, err = st.SaveQuestionInstructions(tx, expected, domain.QuestionInstructionConfig{ID: "question-instructions", Instructions: clean, ShowExamples: flags, UpdatedAt: time.Now().UTC()})
+		result, err = st.SaveQuestionInstructions(tx, expected, domain.QuestionInstructionConfig{ReviewRangeThreshold: effectiveThreshold, ID: "question-instructions", Instructions: clean, ShowExamples: flags, UpdatedAt: time.Now().UTC()})
 		if err != nil {
 			return err
 		}

@@ -73,10 +73,28 @@ func AllocateItems(projectID string, items []Item) ([]Item, error) {
 		if item.UsageStatus == ItemTested {
 			return nil, fmt.Errorf("ID butir %s sudah diuji", item.ID)
 		}
-		if item.ProjectID != "" && item.ProjectID != projectID {
-			return nil, fmt.Errorf("ID butir %s sudah dialokasikan ke proyek lain", item.ID)
+		if item.ReadOnly {
+			return nil, fmt.Errorf("ID butir %s terkunci", item.ID)
 		}
-		item.ProjectID = projectID
+		item.ProjectHistory = append([]ItemProjectUsage(nil), item.ProjectHistory...)
+		for _, usage := range []ItemProjectUsage{{ProjectID: item.ProjectID, ProjectName: item.ProjectName}, {ProjectID: projectID}} {
+			if usage.ProjectID == "" {
+				continue
+			}
+			found := false
+			for _, previous := range item.ProjectHistory {
+				if previous.ProjectID == usage.ProjectID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				item.ProjectHistory = append(item.ProjectHistory, usage)
+			}
+		}
+		if item.ProjectID == "" {
+			item.ProjectID = projectID
+		}
 		item.UsageStatus = ItemAllocated
 		item.UpdatedAt = time.Now()
 	}
@@ -92,9 +110,15 @@ func CompleteProject(project Project, items []Item) (Project, []Item, error) {
 	project.Status = ProjectCompleted
 	project.CompletedAt = &now
 	project.UpdatedAt = now
+	selected := map[string]bool{}
+	for _, subject := range project.Subjects {
+		for _, id := range subject.ItemIDs {
+			selected[id] = true
+		}
+	}
 	updated := append([]Item(nil), items...)
 	for index := range updated {
-		if updated[index].ProjectID == project.ID {
+		if selected[updated[index].ID] || (len(project.Subjects) == 0 && updated[index].ProjectID == project.ID) {
 			updated[index].UsageStatus = ItemTested
 			updated[index].ReadOnly = true
 			updated[index].UpdatedAt = now

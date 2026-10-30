@@ -39,6 +39,7 @@ type MonitoringNote struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 type Monitoring struct {
+	ItemRounds      []MonitoringItemRound    `json:"itemRounds"`
 	FinalNBKChoices []FinalNBKChoice         `json:"finalNBKChoices"`
 	Project         domain.Project           `json:"project"`
 	Subject         domain.ProjectSubject    `json:"subject"`
@@ -263,6 +264,10 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	if round.Status == "finalized" && round.FinalSnapshot != nil {
 		stats := round.FinalSnapshot.Statistics
 		result.Statistics = &stats
+	}
+	result.ItemRounds, err = s.monitoringItemRounds(ctx, p, subject, history, ordered, users)
+	if err != nil {
+		return Monitoring{}, err
 	}
 	result.Round.FinalSnapshot = nil
 	result.Round.Snapshots = nil

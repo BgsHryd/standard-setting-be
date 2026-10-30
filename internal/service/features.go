@@ -252,7 +252,7 @@ func (s *Service) SaveSubmissionWithOptions(ctx context.Context, userID, name, p
 		if err != nil {
 			return err
 		}
-		if item.ProjectID != p.ID || item.SubjectCode != subjectCode || item.ReadOnly || item.UsageStatus != domain.ItemAllocated {
+		if item.SubjectCode != subjectCode {
 			return errors.New("ID butir tidak tersedia")
 		}
 		if err = validateItemAnswer(item, answer); err != nil {
@@ -381,7 +381,7 @@ func (s *Service) feedback(ctx context.Context, user string, p domain.Project, s
 	result := []ItemFeedback{}
 	for i := len(history) - 1; i >= 0; i-- {
 		r := history[i]
-		if r.Number >= current.Number || r.Status != "finalized" || r.FinalSnapshot == nil {
+		if r.Number != current.Number-1 || r.Status != "finalized" || r.FinalSnapshot == nil || r.FinalSnapshot.Revision != domain.RoundRevision(r) {
 			continue
 		}
 		for _, id := range sub.ItemIDs {

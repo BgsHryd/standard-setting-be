@@ -112,6 +112,7 @@ func New(config Config) *App {
 
 	pic := protected.Group("/pic", handler.requireRoles(domain.RolePICMapel))
 	pic.Get("/monitoring", handler.picMonitoring)
+	pic.Get("/round-results", handler.picRoundOverview)
 	pic.Put("/panelist-display", handler.setPanelistDisplay)
 	pic.Get("/panelists/:panelistId/submissions", handler.previewPanelist)
 	pic.Post("/rounds/:action", handler.roundAction)

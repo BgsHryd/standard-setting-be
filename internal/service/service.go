@@ -27,6 +27,7 @@ type Store interface {
 	ListItems(context.Context, string, string, bool) ([]domain.Item, error)
 	GetItem(context.Context, string) (domain.Item, error)
 	UpsertItems(context.Context, []domain.Item) error
+	SaveProjectItemResults(context.Context, string, string, []domain.Item) error
 	ListUsers(context.Context, string) ([]domain.User, error)
 	FindByID(context.Context, string) (domain.User, error)
 	ReplaceProjectUsers(context.Context, string, []domain.User) error
@@ -106,7 +107,7 @@ func (s *Service) ActivateProject(ctx context.Context, id string) (domain.Projec
 			}
 			for _, itemID := range subject.ItemIDs {
 				item, err := s.store.GetItem(tx, itemID)
-				if err != nil || item.ProjectID != id || item.SubjectCode != subject.Code || item.UsageStatus != domain.ItemAllocated {
+				if err != nil || item.SubjectCode != subject.Code {
 					return errors.New("alokasi ID butir tidak valid")
 				}
 			}

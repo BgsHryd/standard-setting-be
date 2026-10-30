@@ -9,6 +9,7 @@ import (
 type panelistItemDTO struct {
 	domain.Item
 	KJ              *string  `json:"kj,omitempty"`
+	SimulationKey   *string  `json:"simulationKey,omitempty"`
 	Measure         *float64 `json:"measure,omitempty"`
 	MeasureCategory string   `json:"measureCategory,omitempty"`
 }
@@ -20,6 +21,11 @@ func panelistFormView(form service.PanelistForm) any {
 		if form.Subject.ShowKJ {
 			key := item.KJ
 			items[i].KJ = &key
+		}
+		// Simulation is authorized independently of the PIC's KJ display toggle.
+		if form.ShowExamples[item.QuestionType] && (item.QuestionType == domain.QuestionTypeComplexMCMA || item.QuestionType == domain.QuestionTypeComplexBS) {
+			key := item.KJ
+			items[i].SimulationKey = &key
 		}
 		if form.Subject.ShowMeasure {
 			items[i].Measure = item.Measure

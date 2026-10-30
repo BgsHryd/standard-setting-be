@@ -297,8 +297,8 @@ func (s *Service) ImportProjectWorkbook(ctx context.Context, data []byte, apply 
 				if ok && item.SubjectCode != p.Subjects[idx].Code {
 					problem("Butir", n, "id_butir", id, "butir bukan milik mata pelajaran ini")
 				}
-				if item.UsageStatus != domain.ItemAvailable || item.ProjectID != "" || item.ReadOnly {
-					problem("Butir", n, "id_butir", id, "butir sudah diuji, terkunci, atau dialokasikan")
+				if (item.UsageStatus != domain.ItemAvailable && item.UsageStatus != domain.ItemAllocated) || item.ReadOnly {
+					problem("Butir", n, "id_butir", id, "butir sudah diuji atau terkunci")
 				}
 			}
 			if ok && findErr == nil {

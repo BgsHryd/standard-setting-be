@@ -14,12 +14,17 @@ import (
 
 var ErrInstructionConflict = errors.New("petunjuk sudah diperbarui; muat versi terbaru sebelum menyimpan")
 
+const DefaultReviewRangeThreshold = 20
+
+func ValidReviewRangeThreshold(value int) bool { return value >= 1 && value <= 100 }
+
 type QuestionInstructionConfig struct {
-	ID           string                  `json:"-" bson:"_id"`
-	Version      int                     `json:"version" bson:"version"`
-	Instructions map[QuestionType]string `json:"instructions" bson:"instructions"`
-	ShowExamples map[QuestionType]bool   `json:"tampilkan_soal_contoh" bson:"tampilkan_soal_contoh"`
-	UpdatedAt    time.Time               `json:"updatedAt" bson:"updatedAt"`
+	ReviewRangeThreshold int                     `json:"reviewRangeThreshold" bson:"reviewRangeThreshold"`
+	ID                   string                  `json:"-" bson:"_id"`
+	Version              int                     `json:"version" bson:"version"`
+	Instructions         map[QuestionType]string `json:"instructions" bson:"instructions"`
+	ShowExamples         map[QuestionType]bool   `json:"tampilkan_soal_contoh" bson:"tampilkan_soal_contoh"`
+	UpdatedAt            time.Time               `json:"updatedAt" bson:"updatedAt"`
 }
 
 func DefaultQuestionExamples() map[QuestionType]bool {

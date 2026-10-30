@@ -46,12 +46,23 @@ func TestValidateActivationReportsIncompleteWizardSections(t *testing.T) {
 	}
 }
 
-func TestAllocateItemsRejectsItemOwnedByAnotherProject(t *testing.T) {
-	items := []Item{{ID: "MAT-001", ProjectID: "project-other", UsageStatus: ItemAllocated}}
-
-	_, err := AllocateItems("project-current", items)
-	if err == nil || !strings.Contains(err.Error(), "proyek lain") {
-		t.Fatalf("expected exclusive allocation error, got %v", err)
+func TestAllocateItemsAllowsReuseWithoutTransferringExistingProject(t *testing.T) {
+	items := []Item{{ID: "MAT-001", ProjectID: "project-other", ProjectName: "Other", UsageStatus: ItemAllocated}}
+	updated, err := AllocateItems("project-current", items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated[0].ProjectID != "project-other" || updated[0].UsageStatus != ItemAllocated {
+		t.Fatalf("existing allocation transferred: %+v", updated[0])
+	}
+	if len(updated[0].ProjectHistory) != 2 {
+		t.Fatalf("missing shared usage history: %+v", updated[0])
+	}
+	if len(items[0].ProjectHistory) != 0 {
+		t.Fatal("input mutated")
+	}
+	if _, err = AllocateItems("third", []Item{{ID: "tested", UsageStatus: ItemTested}}); err == nil {
+		t.Fatal("tested item reused")
 	}
 }
 
@@ -78,3 +89,11 @@ func TestCompleteProjectMarksAllocatedItemsTested(t *testing.T) {
 }
 
 func intPointer(value int) *int { return &value }
+
+func TestCompleteProjectUsesSubjectMembershipForSharedItems(t *testing.T) {
+	p := Project{ID: "second", Status: ProjectActive, Subjects: []ProjectSubject{{ItemIDs: []string{"shared"}}}}
+	_, updated, err := CompleteProject(p, []Item{{ID: "shared", ProjectID: "first", UsageStatus: ItemAllocated}})
+	if err != nil || updated[0].UsageStatus != ItemTested {
+		t.Fatal("shared item completion ignored", updated, err)
+	}
+}

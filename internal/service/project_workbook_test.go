@@ -147,7 +147,7 @@ func TestProjectWorkbookCreatesOnlyDraftAndAllocatesAccountsAtomically(t *testin
 		}
 	}
 	item, _ := st.GetItem(ctx, "MAT-001")
-	if item.ProjectID != p.ID || item.UsageStatus != domain.ItemAllocated {
+	if item.UsageStatus != domain.ItemAllocated || len(item.ProjectHistory) < 2 {
 		t.Fatal("item not allocated")
 	}
 	rounds, _ := st.ListRounds(ctx, p.ID, "MAT")
@@ -160,7 +160,7 @@ func TestProjectWorkbookCreatesOnlyDraftAndAllocatesAccountsAtomically(t *testin
 	}
 	again, err := s.ImportProjectWorkbook(ctx, workbookBytes(t, f), true, "admin")
 	if err != nil || again.Valid || again.Applied {
-		t.Fatalf("repeated import should reject allocated item %+v %v", again, err)
+		t.Fatalf("repeated import should reject duplicate account username %+v %v", again, err)
 	}
 	projects, _ := st.ListProjects(ctx)
 	if len(projects) != 2 {
@@ -186,5 +186,23 @@ func TestProjectWorkbookAccountFailureRollsBackDraftAndItemAllocation(t *testing
 	item, _ := st.GetItem(ctx, "MAT-001")
 	if len(projects) != 1 || item.ProjectID != "" || item.UsageStatus != domain.ItemAvailable {
 		t.Fatal("account failure left a partial project or item allocation")
+	}
+}
+
+type allocatedProjectWorkbookStore struct{ projectWorkbookStore }
+
+func (st *allocatedProjectWorkbookStore) GetItem(_ context.Context, id string) (domain.Item, error) {
+	if id == "MAT-001" {
+		return domain.Item{ID: id, SubjectCode: "MAT", UsageStatus: domain.ItemAllocated, ProjectID: "other-project"}, nil
+	}
+	return domain.Item{}, mongo.ErrNoDocuments
+}
+func TestProjectWorkbookPreviewAllowsAllocatedItems(t *testing.T) {
+	st := &allocatedProjectWorkbookStore{}
+	s := New(st, nil, "12345*")
+	f := filledProjectWorkbook(t, s)
+	got, err := s.ImportProjectWorkbook(context.Background(), workbookBytes(t, f), false, "admin")
+	if err != nil || !got.Valid || st.writes != 0 {
+		t.Fatal("allocated item rejected in project workbook", got, err)
 	}
 }

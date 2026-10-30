@@ -23,9 +23,10 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 		return err
 	}
 	var request struct {
-		Version      *int                           `json:"version"`
-		Instructions map[domain.QuestionType]string `json:"instructions"`
-		ShowExamples map[domain.QuestionType]*bool  `json:"tampilkan_soal_contoh"`
+		ReviewRangeThreshold *int                           `json:"reviewRangeThreshold"`
+		Version              *int                           `json:"version"`
+		Instructions         map[domain.QuestionType]string `json:"instructions"`
+		ShowExamples         map[domain.QuestionType]*bool  `json:"tampilkan_soal_contoh"`
 	}
 	if err := c.BodyParser(&request); err != nil || request.Version == nil || *request.Version < 0 || request.Instructions == nil {
 		return errorResponse(c, 422, "versi dan petunjuk seluruh jenis soal wajib diisi")
@@ -40,7 +41,7 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 			flags[kind] = *enabled
 		}
 	}
-	result, err := h.service.SaveQuestionInstructions(c.UserContext(), getClaims(c).Subject, *request.Version, request.Instructions, flags)
+	result, err := h.service.SaveQuestionInstructionSettings(c.UserContext(), getClaims(c).Subject, *request.Version, request.Instructions, flags, request.ReviewRangeThreshold)
 	if errors.Is(err, domain.ErrInstructionConflict) {
 		return errorResponse(c, 409, err.Error())
 	}

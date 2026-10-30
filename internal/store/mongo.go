@@ -170,36 +170,10 @@ func (m *Mongo) DeleteProject(ctx context.Context, id string) error {
 	if _, err := m.users.UpdateMany(ctx, bson.M{"projectId": id}, bson.M{"$set": bson.M{"active": false, "removed": true, "updatedAt": time.Now().UTC()}, "$inc": bson.M{"authVersion": 1}}); err != nil {
 		return err
 	}
-	if _, err := m.projects.DeleteOne(ctx, bson.M{"_id": id}); err != nil {
+	if err := m.SyncProjectItems(ctx, id, "", nil); err != nil {
 		return err
 	}
-	_, err = m.items.UpdateMany(ctx, bson.M{"projectId": id, "usageStatus": domain.ItemAllocated}, bson.M{"$set": bson.M{"projectId": "", "projectName": "", "usageStatus": domain.ItemAvailable, "updatedAt": time.Now()}})
-	return err
-}
-
-func (m *Mongo) SyncProjectItems(ctx context.Context, projectID, projectName string, selectedIDs []string) error {
-	if _, err := m.items.UpdateMany(ctx, bson.M{"projectHistory": nil}, bson.M{"$set": bson.M{"projectHistory": bson.A{}}}); err != nil {
-		return err
-	}
-	if _, err := m.items.UpdateMany(ctx, bson.M{"projectId": projectID, "usageStatus": domain.ItemAllocated, "_id": bson.M{"$nin": selectedIDs}}, bson.M{"$set": bson.M{"projectId": "", "projectName": "", "usageStatus": domain.ItemAvailable, "updatedAt": time.Now()}}); err != nil {
-		return err
-	}
-	for _, itemID := range selectedIDs {
-		filter := bson.M{"_id": itemID, "usageStatus": bson.M{"$ne": domain.ItemTested}, "$or": bson.A{bson.M{"projectId": ""}, bson.M{"projectId": bson.M{"$exists": false}}, bson.M{"projectId": projectID}}}
-		update := bson.M{"$set": bson.M{"projectId": projectID, "projectName": projectName, "usageStatus": domain.ItemAllocated, "updatedAt": time.Now()}, "$addToSet": bson.M{"projectHistory": domain.ItemProjectUsage{ProjectID: projectID, ProjectName: projectName}}}
-		result, err := m.items.UpdateOne(ctx, filter, update)
-		if err != nil {
-			return err
-		}
-		if result.MatchedCount == 0 {
-			return fmt.Errorf("ID butir %s sudah dialokasikan ke proyek lain atau sudah diuji", itemID)
-		}
-	}
-	return nil
-}
-
-func (m *Mongo) MarkProjectItemsTested(ctx context.Context, projectID string) error {
-	_, err := m.items.UpdateMany(ctx, bson.M{"projectId": projectID}, bson.M{"$set": bson.M{"usageStatus": domain.ItemTested, "readOnly": true, "updatedAt": time.Now()}})
+	_, err = m.projects.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 
@@ -209,7 +183,15 @@ func (m *Mongo) ListItems(ctx context.Context, subjectCode, projectID string, on
 		filter["subjectCode"] = subjectCode
 	}
 	if projectID != "" {
-		filter["projectId"] = projectID
+		project, err := m.GetProject(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		ids := []string{}
+		for _, subject := range project.Subjects {
+			ids = append(ids, subject.ItemIDs...)
+		}
+		filter["_id"] = bson.M{"$in": ids}
 	}
 	if onlyAvailable {
 		filter["usageStatus"] = domain.ItemAvailable
@@ -319,11 +301,13 @@ func (m *Mongo) TouchRound(ctx context.Context, round domain.Round) error {
 
 // Seed is retained for the explicit demo CLI. Normal startup calls BootstrapAdmin only.
 func (m *Mongo) Seed(ctx context.Context, initialPasswordHash string) error {
- if err:=m.BootstrapAdmin(ctx,initialPasswordHash);err!=nil{return err}
- return m.SeedDemoItems(ctx)
+	if err := m.BootstrapAdmin(ctx, initialPasswordHash); err != nil {
+		return err
+	}
+	return m.SeedDemoItems(ctx)
 }
-func(m *Mongo) SeedDemoItems(ctx context.Context)error{
- now:=time.Now().UTC()
+func (m *Mongo) SeedDemoItems(ctx context.Context) error {
+	now := time.Now().UTC()
 
 	subjects := []struct{ code, name string }{{"MAT", "Matematika"}, {"BIN", "Bahasa Indonesia"}, {"IPA", "Ilmu Pengetahuan Alam"}}
 	types := []domain.QuestionType{domain.QuestionTypePG, domain.QuestionTypeComplex, domain.QuestionTypeEssay}

@@ -243,8 +243,8 @@ func (s *Service) ImportWorkbook(ctx context.Context, id string, step int, data 
 				if exists && findErr == nil && item.SubjectCode != sub.Code {
 					problem(rowNo, "id_butir", itemID, "butir bukan milik mata pelajaran ini")
 				}
-				if findErr == nil && (item.UsageStatus == domain.ItemTested || item.ProjectID != "" && item.ProjectID != p.ID) {
-					problem(rowNo, "id_butir", itemID, "butir sudah diuji atau dialokasikan ke proyek lain")
+				if findErr == nil && (item.UsageStatus == domain.ItemTested || item.ReadOnly) {
+					problem(rowNo, "id_butir", itemID, "butir sudah diuji atau terkunci")
 				}
 				if !exists || findErr != nil {
 					continue

@@ -912,7 +912,9 @@ paths:
       summary: Bank butir dengan filter opsional
       description: >-
         Drawer FE mengirim subjectCode dan onlyAvailable=false lalu menerapkan toggle selectable lokal. Query
-        true di BE hanya usageStatus available. Urutan id ascending.
+        true di BE hanya usageStatus available. Butir allocated dapat dipakai beberapa proyek.
+        Filter projectId mengikuti itemIds pada mata pelajaran proyek, bukan ringkasan projectId di bank.
+        Butir tested/terkunci ditolak untuk alokasi baru. Urutan id ascending.
       parameters:
         - $ref: '#/components/parameters/SubjectQuery'
         - $ref: '#/components/parameters/ProjectQuery'
@@ -1149,6 +1151,45 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/ProtectedError'
+  /pic/round-results:
+    get:
+      tags: [Monitoring]
+      x-roles: [pic_mapel]
+      operationId: picRoundOverview
+      summary: Overview anonim hasil putaran terkunci untuk PIC mapel
+      description: >-
+        Scope berasal dari akun PIC aktif dan penugasan PIC terbaru di database.
+        Hanya snapshot final valid pada putaran yang diminta, tanpa fallback ke putaran lain
+        atau respons live. Riwayat NBK dibatasi hingga putaran terpilih. Tanpa roster,
+        kontak, catatan, jawaban mentah atau nilai milik sendiri; titik individual anonim
+        disembunyikan jika n kurang dari tiga. Tidak mengubah status putaran.
+      parameters:
+        - $ref: '#/components/parameters/ProjectQuery'
+        - $ref: '#/components/parameters/SubjectQuery'
+        - name: round
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Overview read-only hasil putaran terpilih
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PICRoundOverview'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /pic/item-results:
     get:
       tags: [Monitoring]
@@ -1203,7 +1244,7 @@ paths:
         Scope berasal dari PIC aktif yang masih ditugaskan. Kedua toggle default false dan disimpan
         per proyek-mapel. projectVersion harus terkini; versi stale 409. Proyek selesai terkunci.
         Update atomik menaikkan versi proyek serta mencatat audit, tanpa mengubah jawaban atau putaran.
-        Panelis menerima perubahan pada polling borang berikutnya. Metadata OFF tidak dikirim pada items borang.
+        Panelis menerima perubahan pada polling borang berikutnya. Field kj dan measure OFF tidak dikirim pada items borang. simulationKey tersedia secara terpisah untuk contoh PGK aktif, independen dari showKJ.
       requestBody:
         required: true
         content:
@@ -3530,6 +3571,12 @@ components:
       type: object
       required: [version, instructions]
       properties:
+        reviewRangeThreshold:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+          description: Ambang global penanda merah nomor butir (maksimum−minimum putaran tepat sebelumnya, dalam poin persentase). Field hilang pada penyimpanan lama dibaca 20; PUT tanpa field mempertahankan nilai sekarang. Tidak mengubah kategori sebaran atau arahan PIC.
         version:
           type: integer
           minimum: 0
@@ -3600,6 +3647,7 @@ components:
             - tested
         projectId:
           type: string
+          description: Ringkasan salah satu proyek pemakai; setelah penyelesaian menunjuk sumber finalResult terbaru. Bukan kepemilikan eksklusif.
         projectName:
           type: string
         projectHistory:
@@ -3918,6 +3966,34 @@ components:
             snapshot lama tersimpan. priority jika rentang >=20 poin persentase, agreement jika
             rentang <20. unavailable jika snapshot/statistik butir tidak tersedia atau tidak valid
             (batas harus finite dalam 0..100, maksimum >= minimum, panelistCount positif).
+    MonitoringItemRound:
+      type: object
+      required: [number, status, items]
+      properties:
+        number:
+          type: integer
+        status:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            required: [itemId, mean, sd, range, n]
+            properties:
+              itemId:
+                type: string
+              mean:
+                type: number
+                nullable: true
+              sd:
+                type: number
+                nullable: true
+                description: SD sampel; null bila respons valid kurang dari dua.
+              range:
+                type: number
+                nullable: true
+              n:
+                type: integer
     Monitoring:
       type: object
       properties:
@@ -3944,6 +4020,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Item'
+        itemRounds:
+          type: array
+          description: Agregat per butir setiap putaran; snapshot untuk putaran final, respons valid roster efektif untuk putaran aktif. Tanpa identitas panelis atau jawaban mentah.
+          items:
+            $ref: '#/components/schemas/MonitoringItemRound'
         itemGuidance:
           type: array
           description: >-
@@ -4318,6 +4399,9 @@ components:
         - $ref: '#/components/schemas/Item'
         - type: object
           properties:
+            simulationKey:
+              type: string
+              description: KJ asli khusus perhitungan contoh lokal PGK MCMA/BS ketika tampilkan_soal_contoh untuk jenis tersebut aktif. Independen dari showKJ; bukan field badge/teks KJ. Tidak dikirim untuk jenis lain atau contoh nonaktif. Kunci invalid tetap tidak menghasilkan skor simulasi di FE.
             kj:
               type: string
               description: Hanya dikirim ketika subject.showKJ=true; string kosong berarti belum diisi.
@@ -4404,6 +4488,39 @@ components:
                 type: number
                 minimum: 0
                 maximum: 100
+    PICRoundOverview:
+      type: object
+      properties:
+        project:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        subject:
+          type: object
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+        round:
+          $ref: '#/components/schemas/Round'
+        items:
+          type: array
+          description: Metadata terbatas pada id, questionType dan maxScore untuk butir dalam snapshot final.
+          items:
+            $ref: '#/components/schemas/Item'
+        roundReview:
+          $ref: '#/components/schemas/RoundReview'
+        roundOutcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoundOutcome'
+        readOnly:
+          type: boolean
+          enum: [true]
     RoundReview:
       allOf:
         - $ref: '#/components/schemas/RoundOutcome'
@@ -4416,6 +4533,12 @@ components:
     PanelistForm:
       type: object
       properties:
+        reviewRangeThreshold:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+          description: Ambang penanda nomor butir, disinkronkan dari Config global. Gunakan feedback dari round.number−1 dengan minimal dua respons; penanda tetap terlihat setelah jawaban tersimpan.
         questionInstructions:
           $ref: '#/components/schemas/QuestionInstructions'
         tampilkan_soal_contoh:

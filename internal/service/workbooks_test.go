@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"github.com/xuri/excelize/v2"
+	"standard-setting/backend/internal/domain"
 	"testing"
 )
 
@@ -127,5 +128,35 @@ func TestNameWorkbookAppliesNamesToSameIdentities(t *testing.T) {
 	user, _ := st.FindByID(ctx, "p1")
 	if user.Name != "Renamed A" {
 		t.Fatal("existing participant name not updated")
+	}
+}
+
+func TestStepTwoWorkbookCanReuseAllocatedItem(t *testing.T) {
+	ctx, s, st, a := fixture(t, true)
+	b, err := s.SaveProject(ctx, domain.Project{Name: "Draft impor"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := s.Template(ctx, b.ID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	book.SetCellValue("Data", "A2", "MAT")
+	book.SetCellValue("Data", "B2", "MAT-001")
+	content, _ := book.WriteToBuffer()
+	got, err := s.ImportWorkbook(ctx, b.ID, 2, content.Bytes(), true)
+	if err != nil || !got.Valid || !got.Applied {
+		t.Fatal("allocated item import failed", got, err)
+	}
+	for _, id := range []string{a.ID, b.ID} {
+		items, err := st.ListItems(ctx, "MAT", id, false)
+		if err != nil || len(items) == 0 || items[0].ID != "MAT-001" {
+			t.Fatal("import transferred item away from a project", id, items, err)
+		}
 	}
 }
