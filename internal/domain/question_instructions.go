@@ -18,13 +18,40 @@ const DefaultReviewRangeThreshold = 20
 
 func ValidReviewRangeThreshold(value int) bool { return value >= 1 && value <= 100 }
 
+type AnswerInstruction struct {
+	Title       string `json:"title" bson:"title"`
+	Description string `json:"description" bson:"description"`
+}
+
+func DefaultAnswerInstructions() map[QuestionType]AnswerInstruction {
+	result := make(map[QuestionType]AnswerInstruction)
+	for kind := range DefaultQuestionInstructions() {
+		result[kind] = AnswerInstruction{Title: "Distribusi 100 kandidat berdasarkan skor", Description: "Jumlah seluruh distribusi harus tepat 100."}
+	}
+	result[QuestionTypePG] = AnswerInstruction{Title: "Nilai kelayakan kandidat", Description: "Masukkan angka bulat 0–100."}
+	return result
+}
+
+func ValidAnswerInstruction(value AnswerInstruction) bool {
+	meaningful := func(s string) bool {
+		for _, r := range s {
+			if !unicode.IsSpace(r) && !unicode.Is(unicode.Cf, r) {
+				return true
+			}
+		}
+		return false
+	}
+	return meaningful(value.Title) && meaningful(value.Description) && len([]rune(value.Title)) <= 200 && len([]rune(value.Description)) <= 1000
+}
+
 type QuestionInstructionConfig struct {
-	ReviewRangeThreshold int                     `json:"reviewRangeThreshold" bson:"reviewRangeThreshold"`
-	ID                   string                  `json:"-" bson:"_id"`
-	Version              int                     `json:"version" bson:"version"`
-	Instructions         map[QuestionType]string `json:"instructions" bson:"instructions"`
-	ShowExamples         map[QuestionType]bool   `json:"tampilkan_soal_contoh" bson:"tampilkan_soal_contoh"`
-	UpdatedAt            time.Time               `json:"updatedAt" bson:"updatedAt"`
+	AnswerInstructions   map[QuestionType]AnswerInstruction `json:"answerInstructions" bson:"answerInstructions"`
+	ReviewRangeThreshold int                                `json:"reviewRangeThreshold" bson:"reviewRangeThreshold"`
+	ID                   string                             `json:"-" bson:"_id"`
+	Version              int                                `json:"version" bson:"version"`
+	Instructions         map[QuestionType]string            `json:"instructions" bson:"instructions"`
+	ShowExamples         map[QuestionType]bool              `json:"tampilkan_soal_contoh" bson:"tampilkan_soal_contoh"`
+	UpdatedAt            time.Time                          `json:"updatedAt" bson:"updatedAt"`
 }
 
 func DefaultQuestionExamples() map[QuestionType]bool {

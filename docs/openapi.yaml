@@ -3567,10 +3567,29 @@ components:
               type: string
               enum: ['', Sukar, Sedang, Mudah]
               description: Dipilih manual; kosong untuk data yang belum dikategorikan. Tidak mengubah nilai measure atau kalkulasi.
+    AnswerInstruction:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    AnswerInstructions:
+      type: object
+      description: Teks biasa instruksi pengisian per jenis soal. Jika tidak dikirim saat PUT, nilai sebelumnya dipertahankan.
+      additionalProperties:
+        $ref: '#/components/schemas/AnswerInstruction'
     QuestionInstructionConfig:
       type: object
       required: [version, instructions]
       properties:
+        answerInstructions:
+          $ref: '#/components/schemas/AnswerInstructions'
         reviewRangeThreshold:
           type: integer
           minimum: 1
@@ -4533,6 +4552,8 @@ components:
     PanelistForm:
       type: object
       properties:
+        answerInstructions:
+          $ref: '#/components/schemas/AnswerInstructions'
         reviewRangeThreshold:
           type: integer
           minimum: 1

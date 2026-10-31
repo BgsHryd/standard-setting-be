@@ -265,27 +265,28 @@ func publicRound(r domain.Round) domain.Round {
 }
 
 type PanelistForm struct {
-	ReviewRangeThreshold int                            `json:"reviewRangeThreshold"`
-	QuestionInstructions map[domain.QuestionType]string `json:"questionInstructions"`
-	ShowExamples         map[domain.QuestionType]bool   `json:"tampilkan_soal_contoh"`
-	RoundReview          *RoundReview                   `json:"roundReview"`
-	RoundOutcomes        []RoundOutcome                 `json:"roundOutcomes"`
-	RoundStartRequired   bool                           `json:"roundStartRequired"`
-	RoundStartedAt       *time.Time                     `json:"roundStartedAt"`
-	DiscussionNotes      []domain.DiscussionNote        `json:"discussionNotes"`
-	SubmittedAt          *time.Time                     `json:"submittedAt"`
-	AllRoundsDone        bool                           `json:"allRoundsDone"`
-	Project              domain.Project                 `json:"project"`
-	Subject              domain.ProjectSubject          `json:"subject"`
-	Round                domain.Round                   `json:"round"`
-	Items                []domain.Item                  `json:"items"`
-	Submissions          []domain.Submission            `json:"submissions"`
-	History              []domain.Round                 `json:"history"`
-	PreviousSubmissions  []domain.Submission            `json:"previousSubmissions"`
-	PreviousRound        *int                           `json:"previousRound"`
-	ReadOnly             bool                           `json:"readOnly"`
-	Feedback             []ItemFeedback                 `json:"feedback"`
-	PeriodMessage        string                         `json:"periodMessage"`
+	AnswerInstructions   map[domain.QuestionType]domain.AnswerInstruction `json:"answerInstructions"`
+	ReviewRangeThreshold int                                              `json:"reviewRangeThreshold"`
+	QuestionInstructions map[domain.QuestionType]string                   `json:"questionInstructions"`
+	ShowExamples         map[domain.QuestionType]bool                     `json:"tampilkan_soal_contoh"`
+	RoundReview          *RoundReview                                     `json:"roundReview"`
+	RoundOutcomes        []RoundOutcome                                   `json:"roundOutcomes"`
+	RoundStartRequired   bool                                             `json:"roundStartRequired"`
+	RoundStartedAt       *time.Time                                       `json:"roundStartedAt"`
+	DiscussionNotes      []domain.DiscussionNote                          `json:"discussionNotes"`
+	SubmittedAt          *time.Time                                       `json:"submittedAt"`
+	AllRoundsDone        bool                                             `json:"allRoundsDone"`
+	Project              domain.Project                                   `json:"project"`
+	Subject              domain.ProjectSubject                            `json:"subject"`
+	Round                domain.Round                                     `json:"round"`
+	Items                []domain.Item                                    `json:"items"`
+	Submissions          []domain.Submission                              `json:"submissions"`
+	History              []domain.Round                                   `json:"history"`
+	PreviousSubmissions  []domain.Submission                              `json:"previousSubmissions"`
+	PreviousRound        *int                                             `json:"previousRound"`
+	ReadOnly             bool                                             `json:"readOnly"`
+	Feedback             []ItemFeedback                                   `json:"feedback"`
+	PeriodMessage        string                                           `json:"periodMessage"`
 }
 
 func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCode string) (PanelistForm, error) {
@@ -398,7 +399,7 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 	for i := range history {
 		history[i] = publicRound(history[i])
 	}
-	return PanelistForm{ReviewRangeThreshold: questionConfig.ReviewRangeThreshold, ShowExamples: questionConfig.ShowExamples, QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
+	return PanelistForm{AnswerInstructions: questionConfig.AnswerInstructions, ReviewRangeThreshold: questionConfig.ReviewRangeThreshold, ShowExamples: questionConfig.ShowExamples, QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
 }
 
 func (s *Service) SaveSubmission(ctx context.Context, userID, name, projectID, subjectCode string, number int, itemID string, answer domain.Answer) (domain.Submission, error) {
