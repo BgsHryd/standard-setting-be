@@ -2585,7 +2585,7 @@ paths:
         - "panelis"
       operationId: "getPractice"
       summary: "Baca sesi latihan panelis"
-      description: "Tiga butir contoh tetap (PG, PG kompleks, esai), terpisah dari bank/alokasi dan jawaban penilaian nyata. Tidak membuat sesi saat GET. Memerlukan kontak yang lengkap jika diwajibkan proyek."
+      description: "Empat butir contoh tetap (PG, PG kompleks BS, PG kompleks MCMA, esai), terpisah dari bank/alokasi dan jawaban penilaian nyata. Jenis PG kompleks lama tidak digunakan dalam simulasi. Tidak membuat sesi saat GET. Memerlukan kontak yang lengkap jika diwajibkan proyek."
       parameters:
         - "$ref": "#/components/parameters/SessionId"
       responses:
@@ -2649,7 +2649,7 @@ paths:
         - "panelis"
       operationId: "savePracticeAnswer"
       summary: "Simpan jawaban butir latihan"
-      description: "Memerlukan version sesi terkini, jawaban valid sesuai jenis/skor butir contoh, latihan belum selesai, timer belum habis, serta PIC belum menutup latihan. Penyimpanan menaikkan version. Tidak mengubah penilaian nyata."
+      description: "Memerlukan version sesi terkini, jawaban valid sesuai jenis/skor butir contoh, latihan belum selesai, periode proyek aktif, serta PIC belum menutup latihan. Penyimpanan menaikkan version. Tidak mengubah penilaian nyata."
       parameters:
         - "$ref": "#/components/parameters/SessionId"
         - "$ref": "#/components/parameters/BrowserOrigin"
@@ -2661,7 +2661,8 @@ paths:
             type: "string"
             enum:
               - "practice-pg"
-              - "practice-complex"
+              - "practice-complex-bs"
+              - "practice-complex-mcma"
               - "practice-essay"
       requestBody:
         required: true
@@ -5269,7 +5270,7 @@ components:
           type: "array"
           items:
             "$ref": "#/components/schemas/Item"
-          description: "Tiga butir contoh terpisah dari bank dan hasil penilaian nyata. Esai memakai skor maksimum 2 (distribusi skor 0, 1, 2). Jawaban lama yang tidak sesuai skala contoh tidak ditampilkan."
+          description: "Empat contoh: PG, PG kompleks BS, PG kompleks MCMA, dan esai. Kedua PG kompleks memakai skor maksimum 3; esai maksimum 2. Terpisah dari bank dan penilaian nyata. Jawaban contoh lama tidak dipindahkan ke jenis BS/MCMA."
     PracticeVersionInput:
       type: "object"
       required:

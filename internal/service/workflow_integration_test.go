@@ -96,11 +96,24 @@ func TestPracticeIsSeparateAndPICControlsActualScoring(t *testing.T) {
 		t.Fatal("scored while practice open")
 	}
 	practice, err := s.StartPractice(ctx, "p1")
-	if err != nil || practice.Session.StartedAt.IsZero() || len(practice.Items) != 3 {
+	if err != nil || practice.Session.StartedAt.IsZero() || len(practice.Items) != 4 {
 		t.Fatalf("practice start: %+v %v", practice, err)
 	}
 	if _, err = s.SavePracticeAnswer(ctx, "p1", "practice-pg", a, practice.Session.Version); err != nil {
 		t.Fatal(err)
+	}
+	practice, _ = s.GetPractice(ctx, "p1")
+	for _, item := range practice.Items {
+		if item.QuestionType != domain.QuestionTypeComplexBS && item.QuestionType != domain.QuestionTypeComplexMCMA {
+			continue
+		}
+		practice, err = s.SavePracticeAnswer(ctx, "p1", item.ID, domain.Answer{QuestionType: item.QuestionType, Distribution: []int{10, 20, 30, 40}}, practice.Session.Version)
+		if err != nil {
+			t.Fatal("split complex example could not be saved", item.ID, err)
+		}
+	}
+	if _, err = s.SavePracticeAnswer(ctx, "p1", "practice-complex", domain.Answer{QuestionType: domain.QuestionTypeComplex, Distribution: []int{10, 20, 30, 40}}, practice.Session.Version); err == nil {
+		t.Fatal("removed legacy complex example still accepts writes")
 	}
 	rows, _ := st.ListSubmissions(ctx, p.ID, "MAT", 0, "")
 	if len(rows) != 0 {
@@ -122,6 +135,31 @@ func TestPracticeIsSeparateAndPICControlsActualScoring(t *testing.T) {
 	practice, err = s.GetPractice(ctx, "p1")
 	if err != nil || !practice.ReadOnly {
 		t.Fatalf("practice reopened: %+v %v", practice, err)
+	}
+}
+
+func TestPracticeIncludesSeparateBSAndMCMANotLegacyComplex(t *testing.T) {
+	items := practiceItems()
+	want := []domain.QuestionType{domain.QuestionTypePG, domain.QuestionTypeComplexBS, domain.QuestionTypeComplexMCMA, domain.QuestionTypeEssay}
+	if len(items) != len(want) {
+		t.Fatalf("want four examples, got %d", len(items))
+	}
+	ids := map[string]bool{}
+	for i, item := range items {
+		if item.QuestionType != want[i] || item.ID == "practice-complex" || ids[item.ID] {
+			t.Fatal("wrong example types/identity", items)
+		}
+		ids[item.ID] = true
+		if item.QuestionType == domain.QuestionTypeComplexBS || item.QuestionType == domain.QuestionTypeComplexMCMA {
+			if item.MaxScore != 3 || validateItemAnswer(item, domain.Answer{QuestionType: item.QuestionType, Distribution: []int{10, 20, 30, 40}}) != nil {
+				t.Fatal("complex example rules changed", item)
+			}
+		}
+	}
+	row := domain.PracticeSession{Answers: map[string]domain.Answer{"practice-complex": {QuestionType: domain.QuestionTypeComplex, Distribution: []int{10, 20, 30, 40}}}}
+	view := practiceView(domain.Project{}, domain.ProjectSubject{}, row)
+	if len(view.Session.Answers) != 0 || len(row.Answers) != 1 {
+		t.Fatal("legacy answer reused or original session mutated")
 	}
 }
 

@@ -29,7 +29,8 @@ func practiceID(project, user string) string {
 func practiceItems() []domain.Item {
 	return []domain.Item{
 		{ID: "practice-pg", QuestionType: domain.QuestionTypePG, MaxScore: 1, Rubric: []string{"Contoh latihan pilihan ganda; berikan persentase kandidat yang dapat menjawab benar."}},
-		{ID: "practice-complex", QuestionType: domain.QuestionTypeComplex, MaxScore: 3, Rubric: []string{"Bagikan 100 kandidat ke skor 0–3."}},
+		{ID: "practice-complex-bs", QuestionType: domain.QuestionTypeComplexBS, MaxScore: 3, Rubric: []string{"Contoh pilihan ganda kompleks Benar–Salah. Bagikan 100 kandidat ke skor 0–3."}},
+		{ID: "practice-complex-mcma", QuestionType: domain.QuestionTypeComplexMCMA, MaxScore: 3, Rubric: []string{"Contoh pilihan ganda kompleks MCMA. Bagikan 100 kandidat ke skor 0–3."}},
 		{ID: "practice-essay", QuestionType: domain.QuestionTypeEssay, MaxScore: 2, Rubric: []string{"Bagikan 100 kandidat ke skor 0–2."}},
 	}
 }
