@@ -6,8 +6,42 @@ import (
 	"strings"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/mongo"
 	"standard-setting/backend/internal/domain"
 )
+
+// Keep the shared instruction fixture in this tracked file so CI does not
+// depend on optional local test files being present.
+type instructionMemory struct {
+	Store
+	config  domain.QuestionInstructionConfig
+	readErr error
+	actor   domain.User
+}
+
+func (m *instructionMemory) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+func (m *instructionMemory) FindByID(context.Context, string) (domain.User, error) {
+	return m.actor, nil
+}
+func (m *instructionMemory) GetQuestionInstructions(context.Context) (domain.QuestionInstructionConfig, error) {
+	if m.readErr != nil {
+		return m.config, m.readErr
+	}
+	if m.config.Version == 0 {
+		return m.config, mongo.ErrNoDocuments
+	}
+	return m.config, nil
+}
+func (m *instructionMemory) SaveQuestionInstructions(_ context.Context, expected int, cfg domain.QuestionInstructionConfig) (domain.QuestionInstructionConfig, error) {
+	if m.config.Version != expected {
+		return cfg, domain.ErrInstructionConflict
+	}
+	cfg.Version = expected + 1
+	m.config = cfg
+	return cfg, nil
+}
 
 func TestAnswerInstructionsPersistAndLegacySavePreserves(t *testing.T) {
 	ctx := context.Background()
