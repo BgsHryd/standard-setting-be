@@ -1232,6 +1232,69 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         default:
           $ref: '#/components/responses/ProtectedError'
+  /pic/subject-config:
+    get:
+      tags: [Monitoring]
+      x-roles: [pic_mapel]
+      operationId: getPICSubjectConfig
+      summary: Baca definisi JQC mapel penugasan PIC
+      description: Scope berasal dari akun aktif dan PICUserID mapel; tidak menerima pilihan proyek/mapel lain. Proyek selesai dapat dibaca.
+      responses:
+        '200':
+          description: Konfigurasi mapel sendiri
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PICSubjectConfig'
+        default:
+          $ref: '#/components/responses/ProtectedError'
+    put:
+      tags: [Monitoring]
+      x-roles: [pic_mapel]
+      operationId: savePICSubjectConfig
+      summary: Simpan definisi JQC mapel sendiri
+      description: >-
+        Definisi tidak kosong, maksimal 8000 karakter; rich text mengikuti format candidateDefinition.
+        projectVersion harus terkini. Perubahan menaikkan versi kandidat dan proyek, menyimpan riwayat
+        serta audit; snapshot final tidak diubah. Proyek selesai terkunci. Definisi sama tidak membuat versi baru.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateDefinition, projectVersion]
+              properties:
+                candidateDefinition:
+                  type: string
+                  minLength: 1
+                  maxLength: 8000
+                projectVersion:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Definisi tersimpan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PICSubjectConfig'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
   /pic/panelist-display:
     put:
       tags:
@@ -3542,7 +3605,7 @@ components:
             $ref: '#/components/schemas/PersonnelSlot'
         candidateDefinition:
           type: string
-          description: Definisi kandidat per mapel; wajib sebelum aktivasi proyek baru.
+          description: Definisi kandidat per mapel; opsional dari admin dan dapat diisi PIC melalui Config Mapel.
         candidateVersion:
           type: integer
           minimum: 0
@@ -3552,6 +3615,24 @@ components:
           readOnly: true
           items:
             $ref: '#/components/schemas/CandidateDefinitionRevision'
+    PICSubjectConfig:
+      type: object
+      required: [projectName, subjectCode, subjectName, candidateDefinition, candidateVersion, projectVersion, readOnly]
+      properties:
+        projectName:
+          type: string
+        subjectCode:
+          type: string
+        subjectName:
+          type: string
+        candidateDefinition:
+          type: string
+        candidateVersion:
+          type: integer
+        projectVersion:
+          type: integer
+        readOnly:
+          type: boolean
     CatalogItem:
       allOf:
         - $ref: '#/components/schemas/Item'

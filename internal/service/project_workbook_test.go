@@ -89,6 +89,18 @@ func TestProjectWorkbookPreviewValidatesWithoutWriting(t *testing.T) {
 		t.Fatal("same-day period must cover the full Jakarta day")
 	}
 }
+func TestProjectWorkbookAllowsPICToFillCandidateLater(t *testing.T) {
+	st := &projectWorkbookStore{}
+	s := New(st, nil, "12345*")
+	f := filledProjectWorkbook(t, s)
+	if err := f.SetCellValue("Mapel", "B2", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ImportProjectWorkbook(context.Background(), workbookBytes(t, f), false, "admin")
+	if err != nil || !got.Valid || got.Project == nil || got.Project.Subjects[0].CandidateDefinition != "" || st.writes != 0 {
+		t.Fatal("optional definition rejected", got, err)
+	}
+}
 func TestProjectWorkbookReportsAllRowsAndRejectsApplyWithoutWrites(t *testing.T) {
 	st := &projectWorkbookStore{}
 	s := New(st, nil, "12345*")

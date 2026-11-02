@@ -68,7 +68,7 @@ func (s *Service) ProjectWorkbookTemplate(ctx context.Context) ([]byte, error) {
 		"Isi empat sheet Proyek, Mapel, Butir, Personel. Satu file membuat satu proyek Draft baru.",
 		"Proyek: tepat satu baris. Tanggal teks YYYY-MM-DD, termasuk hari selesai, zona waktu Asia/Jakarta.",
 		"Pembulatan: ceil_1pp, nearest_1pp, atau none. Kumpulkan kontak: true atau false.",
-		"Mapel: satu baris per nama/kode dari Referensi mapel. Definisi kandidat wajib, maksimal 8000 karakter.",
+		"Mapel: satu baris per nama/kode dari Referensi mapel. Definisi kandidat opsional, maksimal 8000 karakter; dapat diisi PIC mapel.",
 		"Butir: satu baris per ID butir tersedia di bank soal. Butir dialokasikan setelah seluruh validasi lolos.",
 		"Personel: tepat satu pic_mapel dan 1–1000 panelis per mapel. Isi nama setiap personel.",
 		"Username opsional, unik 3–80 karakter huruf kecil/angka/titik/garis bawah/tanda hubung. Kosong = otomatis.",
@@ -260,8 +260,8 @@ func (s *Service) ImportProjectWorkbook(ctx context.Context, data []byte, apply 
 				return
 			}
 			definition := domain.NormalizeCandidateDefinition(cell(row, 1))
-			if definition == "" || len([]rune(definition)) > 8000 {
-				problem("Mapel", n, "definisi_kandidat", "", "definisi kandidat wajib 1–8000 karakter")
+			if len([]rune(definition)) > 8000 {
+				problem("Mapel", n, "definisi_kandidat", "", "definisi kandidat maksimal 8000 karakter")
 			}
 			indexes[sub.Code] = len(p.Subjects)
 			sourceRows[sub.Code] = n
