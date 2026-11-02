@@ -125,7 +125,7 @@ func TestPracticeIsSeparateAndPICControlsActualScoring(t *testing.T) {
 	}
 }
 
-func TestWorkflowRejectsStaleReceiptsAndExpiredPractice(t *testing.T) {
+func TestWorkflowRejectsStaleReceiptsAndAllowsUntimedPractice(t *testing.T) {
 	ctx, s, st, p := fixture(t, true)
 	p.WorkflowVersion = 1
 	p.PlannedRounds = 2
@@ -174,8 +174,56 @@ func TestWorkflowRejectsStaleReceiptsAndExpiredPractice(t *testing.T) {
 	if err := st.SavePracticeSession(ctx, practice.Session, practice.Session.Version); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.SavePracticeAnswer(ctx, "p1", "practice-pg", domain.Answer{QuestionType: domain.QuestionTypePG, Value: intValue(50)}, practice.Session.Version); err == nil {
-		t.Fatal("expired practice changed")
+	practice, err = s.SavePracticeAnswer(ctx, "p1", "practice-pg", domain.Answer{QuestionType: domain.QuestionTypePG, Value: intValue(50)}, practice.Session.Version)
+	if err != nil || practice.ReadOnly || practice.ExpiresAt != nil {
+		t.Fatal("practice must remain writable after ten minutes", practice, err)
+	}
+	if _, err = s.SavePracticeAnswer(ctx, "p1", "practice-essay", domain.Answer{QuestionType: domain.QuestionTypeEssay, Distribution: []int{20, 30, 50}}, practice.Session.Version); err != nil {
+		t.Fatal("essay practice must accept score 0 through 2", err)
+	}
+}
+
+func TestPracticeHasNoDeadlineAndEssayMaximumTwo(t *testing.T) {
+	now := time.Now().UTC()
+	p := domain.Project{Status: domain.ProjectActive, SimulationEnabled: true, StartDate: now.Add(-time.Hour), EndDate: now.Add(time.Hour)}
+	sub := domain.ProjectSubject{PracticeStatus: "open"}
+	row := domain.PracticeSession{StartedAt: now.Add(-11 * time.Minute), Answers: map[string]domain.Answer{
+		"practice-pg":    {QuestionType: domain.QuestionTypePG, Value: intValue(50)},
+		"practice-essay": {QuestionType: domain.QuestionTypeEssay, Distribution: []int{0, 0, 100, 0, 0}},
+	}}
+	view := practiceView(p, sub, row)
+	if view.ReadOnly || view.ExpiresAt != nil {
+		t.Fatal("elapsed practice still expires", view)
+	}
+	for _, item := range view.Items {
+		if item.QuestionType == domain.QuestionTypeEssay {
+			if item.MaxScore != 2 || validateItemAnswer(item, domain.Answer{QuestionType: domain.QuestionTypeEssay, Distribution: []int{20, 30, 50}}) != nil {
+				t.Fatal("essay example must have three score bins", item)
+			}
+		}
+	}
+	if _, exists := view.Session.Answers["practice-essay"]; exists {
+		t.Fatal("old five-bin essay answer shown as valid")
+	}
+	if _, exists := view.Session.Answers["practice-pg"]; !exists || len(row.Answers) != 2 {
+		t.Fatal("valid answer lost or original session mutated")
+	}
+	finished := now
+	for _, kind := range []string{"finished", "closed", "period", "completed"} {
+		project, subject, session := p, sub, row
+		switch kind {
+		case "finished":
+			session.FinishedAt = &finished
+		case "closed":
+			subject.PracticeStatus = "closed"
+		case "period":
+			project.EndDate = now.Add(-time.Minute)
+		case "completed":
+			project.Status = domain.ProjectCompleted
+		}
+		if !practiceView(project, subject, session).ReadOnly {
+			t.Fatal("practice gate removed", kind)
+		}
 	}
 }
 

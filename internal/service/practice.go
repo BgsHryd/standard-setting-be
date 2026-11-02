@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const practiceDuration = 10 * time.Minute
-
 type practiceStore interface {
 	GetPracticeSession(context.Context, string) (domain.PracticeSession, error)
 	SavePracticeSession(context.Context, domain.PracticeSession, int) error
@@ -32,7 +30,7 @@ func practiceItems() []domain.Item {
 	return []domain.Item{
 		{ID: "practice-pg", QuestionType: domain.QuestionTypePG, MaxScore: 1, Rubric: []string{"Contoh latihan pilihan ganda; berikan persentase kandidat yang dapat menjawab benar."}},
 		{ID: "practice-complex", QuestionType: domain.QuestionTypeComplex, MaxScore: 3, Rubric: []string{"Bagikan 100 kandidat ke skor 0–3."}},
-		{ID: "practice-essay", QuestionType: domain.QuestionTypeEssay, MaxScore: 4, Rubric: []string{"Bagikan 100 kandidat ke skor 0–4."}},
+		{ID: "practice-essay", QuestionType: domain.QuestionTypeEssay, MaxScore: 2, Rubric: []string{"Bagikan 100 kandidat ke skor 0–2."}},
 	}
 }
 func (s *Service) practiceScope(ctx context.Context, user string) (domain.User, domain.Project, domain.ProjectSubject, practiceStore, error) {
@@ -55,14 +53,16 @@ func (s *Service) practiceScope(ctx context.Context, user string) (domain.User, 
 }
 func practiceView(p domain.Project, sub domain.ProjectSubject, row domain.PracticeSession) PracticeView {
 	v := PracticeView{Enabled: p.SimulationEnabled, Open: p.Status == domain.ProjectActive && p.SimulationEnabled && sub.PracticeStatus == "open", Session: row, Items: practiceItems()}
+	// Older practice answers may use a score scale that no longer matches the example.
+	v.Session.Answers = make(map[string]domain.Answer)
+	for _, item := range v.Items {
+		if answer, ok := row.Answers[item.ID]; ok && validateItemAnswer(item, answer) == nil {
+			v.Session.Answers[item.ID] = answer
+		}
+	}
 	v.ReadOnly = !v.Open || row.FinishedAt != nil || !domain.ProjectWritable(p, time.Now().UTC())
 	if !domain.ProjectWritable(p, time.Now().UTC()) {
 		v.Message = "Latihan tersedia selama periode proyek berlangsung."
-	}
-	if !row.StartedAt.IsZero() {
-		end := row.StartedAt.Add(practiceDuration)
-		v.ExpiresAt = &end
-		v.ReadOnly = v.ReadOnly || !time.Now().Before(end)
 	}
 	return v
 }
@@ -143,7 +143,7 @@ func (s *Service) changePractice(ctx context.Context, user string, expected int,
 		}
 		if answer != nil {
 			if v.ReadOnly {
-				return errors.New("waktu latihan sudah habis")
+				return errors.New("latihan tidak dapat diubah")
 			}
 			found := false
 			for _, item := range v.Items {

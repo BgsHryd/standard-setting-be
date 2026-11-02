@@ -2615,8 +2615,8 @@ paths:
       x-roles:
         - "panelis"
       operationId: "startPractice"
-      summary: "Mulai latihan selama 10 menit"
-      description: "Tanpa body. Hanya proyek aktif dengan simulationEnabled=true dan practiceStatus=open. Mengembalikan sesi yang sudah ada tanpa mereset timer; setiap panelis memiliki satu sesi latihan terisolasi."
+      summary: "Mulai latihan tanpa batas durasi"
+      description: "Tanpa body. Hanya proyek aktif dengan simulationEnabled=true dan practiceStatus=open. Mengembalikan sesi yang sudah ada; setiap panelis memiliki satu sesi latihan terisolasi. Latihan tetap mengikuti periode proyek dan penutupan oleh PIC."
       parameters:
         - "$ref": "#/components/parameters/SessionId"
         - "$ref": "#/components/parameters/BrowserOrigin"
@@ -5257,18 +5257,19 @@ components:
           description: "Proyek aktif, simulasi diaktifkan dan latihan mapel belum ditutup PIC."
         readOnly:
           type: "boolean"
-          description: "Latihan ditutup, sudah selesai, timer 10 menit sudah habis, atau di luar periode proyek."
+          description: "Latihan ditutup, sudah selesai, atau di luar periode proyek."
         expiresAt:
           type: "string"
           format: "date-time"
           nullable: true
+          description: "Selalu null; simulasi tidak memiliki batas durasi."
         session:
           "$ref": "#/components/schemas/PracticeSession"
         items:
           type: "array"
           items:
             "$ref": "#/components/schemas/Item"
-          description: "Tiga butir contoh terpisah dari bank dan hasil penilaian nyata."
+          description: "Tiga butir contoh terpisah dari bank dan hasil penilaian nyata. Esai memakai skor maksimum 2 (distribusi skor 0, 1, 2). Jawaban lama yang tidak sesuai skala contoh tidak ditampilkan."
     PracticeVersionInput:
       type: "object"
       required:
