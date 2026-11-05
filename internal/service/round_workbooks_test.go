@@ -161,32 +161,69 @@ func TestRoundWorkbooksSeparateSubjectsAndUseFrozenResponses(t *testing.T) {
 		t.Fatalf("want summary + 2 rounds for MAT, summary for BIN, got %v", files)
 	}
 	summary := files["01-MAT/rekap_SS-QAMAT"+time.Now().In(time.FixedZone("Asia/Jakarta", 7*3600)).Format("20060102")+".xlsx"]
-	if workbookCell(t, summary, "A9") != "Putaran" || workbookCell(t, summary, "B9") != "Cut-off test" || workbookCell(t, summary, "D9") != "ICC" || workbookCell(t, summary, "A10") != "Putaran 1" || workbookCell(t, summary, "B10") != "70" {
+	if workbookCell(t, summary, "A1") != "Putaran" || workbookCell(t, summary, "B1") != "Cut-off test" || workbookCell(t, summary, "D1") != "ICC" || workbookCell(t, summary, "A2") != "Putaran 1" || workbookCell(t, summary, "B2") != "70" {
 		t.Fatal("incorrect vertical summary")
 	}
-	sd, _ := strconv.ParseFloat(workbookCell(t, summary, "C10"), 64)
-	if math.Abs(sd-math.Sqrt(800)) > 1e-10 || workbookCell(t, summary, "D10") != "0" {
-		t.Fatal("sample SD or valid zero ICC lost", sd, workbookCell(t, summary, "D10"))
+	sd, _ := strconv.ParseFloat(workbookCell(t, summary, "C2"), 64)
+	if math.Abs(sd-math.Sqrt(800)) > 1e-10 || workbookCell(t, summary, "D2") != "0" {
+		t.Fatal("sample SD or valid zero ICC lost", sd, workbookCell(t, summary, "D2"))
 	}
-	if workbookCell(t, summary, "B11") != "Belum lengkap" {
+	if workbookCell(t, summary, "B3") != "Belum lengkap" {
 		t.Fatal("partial live round presented as complete")
 	}
 	frozen := files["01-MAT/putaran-1.xlsx"]
-	if workbookCell(t, frozen, "A10") != "001" || workbookCell(t, frozen, "B9") != "Panelis 1 - Nama saat dikunci" || workbookCell(t, frozen, "B10") != "50" || workbookCell(t, frozen, "C11") != "100" {
+	if workbookCell(t, frozen, "A2") != "001" || workbookCell(t, frozen, "B1") != "Panelis 1 - Nama saat dikunci" || workbookCell(t, frozen, "B2") != "50" || workbookCell(t, frozen, "C3") != "100" {
 		t.Fatal("snapshot response/name/maximum changed with live data")
 	}
-	if !strings.Contains(workbookCell(t, frozen, "D10"), "Prioritaskan diskusi") {
+	if !strings.Contains(workbookCell(t, frozen, "D2"), "Prioritaskan diskusi") {
 		t.Fatal("missing frozen guidance")
 	}
 	live := files["01-MAT/putaran-2.xlsx"]
-	if workbookCell(t, live, "B10") != "50" || workbookCell(t, live, "C10") != "" || workbookCell(t, live, "B11") != "" {
+	if workbookCell(t, live, "B2") != "50" || workbookCell(t, live, "C2") != "" || workbookCell(t, live, "B3") != "" {
 		t.Fatal("missing live responses became zero or stale roster counted")
 	}
-	if workbookCell(t, live, "D10") != "Menunggu putaran dikunci." {
+	if workbookCell(t, live, "D2") != "Menunggu putaran dikunci." {
 		t.Fatal("active round has final guidance")
 	}
-	if workbookCell(t, files["02-BIN/rekap_SS-QABIN"+time.Now().In(time.FixedZone("Asia/Jakarta", 7*3600)).Format("20060102")+".xlsx"], "A10") != "Belum ada putaran" {
+	if workbookCell(t, files["02-BIN/rekap_SS-QABIN"+time.Now().In(time.FixedZone("Asia/Jakarta", 7*3600)).Format("20060102")+".xlsx"], "A2") != "Belum ada putaran" {
 		t.Fatal("unstarted subject omitted")
+	}
+}
+
+func TestRoundWorkbooksStartWithHeadersAndContainOnlyTableRows(t *testing.T) {
+	s, _ := roundWorkbookFixture()
+	data, _, err := s.ExportRoundWorkbooks(context.Background(), "p", "all", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, f := range openRoundWorkbooks(t, data) {
+		sheet := f.GetSheetList()[0]
+		wantHeader := "Putaran"
+		if sheet == "Respons" {
+			wantHeader = "ID butir"
+		}
+		if got := workbookCell(t, f, "A1"); got != wantHeader {
+			t.Fatalf("%s first row is %q, want header %q", name, got, wantHeader)
+		}
+		rows, err := f.GetRows(sheet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantRows := 3
+		if strings.HasPrefix(name, "02-BIN/") {
+			wantRows = 2
+		}
+		if len(rows) != wantRows {
+			t.Fatalf("%s contains extra metadata/footer rows: %d, want %d", name, len(rows), wantRows)
+		}
+		merged, err := f.GetMergeCells(sheet)
+		if err != nil || len(merged) != 0 {
+			t.Fatal("general-information merged cells remain", name, err)
+		}
+		panes, err := f.GetPanes(sheet)
+		if err != nil || panes.YSplit != 1 || panes.TopLeftCell != "B2" {
+			t.Fatal("freeze panes do not follow header row", name, panes, err)
+		}
 	}
 }
 
@@ -211,7 +248,7 @@ func TestRoundWorkbooksFilterSubjectAndKeepSpreadsheetTextSafe(t *testing.T) {
 	}
 	for name, f := range files {
 		if strings.HasSuffix(name, "putaran-1.xlsx") {
-			if formula, _ := f.GetCellFormula("Respons", "B9"); formula != "" {
+			if formula, _ := f.GetCellFormula("Respons", "B1"); formula != "" {
 				t.Fatal("name became executable formula")
 			}
 		}
@@ -279,8 +316,8 @@ func TestRoundWorkbooksActiveWeightedScoresAndExclusions(t *testing.T) {
 	files := openRoundWorkbooks(t, data)
 	for name, f := range files {
 		if strings.Contains(name, "rekap_") {
-			if workbookCell(t, f, "B11") != "66" {
-				t.Fatal("active cutoff is not the mean of weighted panelist totals", workbookCell(t, f, "B11"))
+			if workbookCell(t, f, "B3") != "66" {
+				t.Fatal("active cutoff is not the mean of weighted panelist totals", workbookCell(t, f, "B3"))
 			}
 		}
 	}
@@ -290,7 +327,7 @@ func TestRoundWorkbooksActiveWeightedScoresAndExclusions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, f := range openRoundWorkbooks(t, data) {
-		if strings.Contains(name, "rekap_") && (workbookCell(t, f, "B11") != "84" || workbookCell(t, f, "C11") != "Minimal 2 panelis") {
+		if strings.Contains(name, "rekap_") && (workbookCell(t, f, "B3") != "84" || workbookCell(t, f, "C3") != "Minimal 2 panelis") {
 			t.Fatal("excluded panelist counted or single panelist SD invented")
 		}
 	}
@@ -306,7 +343,7 @@ func TestRoundWorkbooksActiveWeightedScoresAndExclusions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if workbookCell(t, openRoundWorkbooks(t, data)["01-MAT/putaran-2.xlsx"], "B10") != "" {
+		if workbookCell(t, openRoundWorkbooks(t, data)["01-MAT/putaran-2.xlsx"], "B2") != "" {
 			t.Fatal("stale or invalid response exported as current")
 		}
 		st.rows["MAT"][2][0] = old
@@ -324,7 +361,7 @@ func TestRoundWorkbooksMongoSnapshotReadIsImmutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := openRoundWorkbooks(t, before)["01-MAT/putaran-1.xlsx"]
-	if workbookCell(t, old, "B10") != "60" || workbookCell(t, old, "C10") != "80" {
+	if workbookCell(t, old, "B2") != "60" || workbookCell(t, old, "C2") != "80" {
 		t.Fatal("frozen responses not exported")
 	}
 	u, err := st.FindByID(ctx, "p1")
@@ -349,7 +386,7 @@ func TestRoundWorkbooksMongoSnapshotReadIsImmutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := openRoundWorkbooks(t, after)["01-MAT/putaran-1.xlsx"]
-	if workbookCell(t, fresh, "B9") != workbookCell(t, old, "B9") || workbookCell(t, fresh, "B12") != "50" {
+	if workbookCell(t, fresh, "B1") != workbookCell(t, old, "B1") || workbookCell(t, fresh, "B4") != "50" {
 		t.Fatal("live roster/maximum changed frozen response workbook")
 	}
 }
@@ -376,7 +413,7 @@ func TestRoundWorkbooksFrozenShapeIgnoresExcludedAndStaleResponses(t *testing.T)
 			}
 			files := openRoundWorkbooks(t, data)
 			f := files["01-MAT/putaran-1.xlsx"]
-			if workbookCell(t, f, "B11") != "50" || workbookCell(t, f, "C11") != "100" {
+			if workbookCell(t, f, "B3") != "50" || workbookCell(t, f, "C3") != "100" {
 				t.Fatal("unrelated response changed frozen item shape")
 			}
 		})

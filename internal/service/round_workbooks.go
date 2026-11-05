@@ -107,13 +107,13 @@ func (s *Service) ExportRoundWorkbooks(ctx context.Context, projectID, subjectCo
 		}
 		code := workbookFilePart(subject.subject.Code)
 		folder := fmt.Sprintf("%02d-%s/", i+1, code)
-		summary, err := renderRoundSummary(project, subject, generated)
+		summary, err := renderRoundSummary(subject)
 		name := fmt.Sprintf("rekap_%s%s%s.xlsx", workbookFilePart(project.Code), code, generated.Format("20060102"))
 		if err := write(folder+name, summary, err); err != nil {
 			return nil, "", err
 		}
 		for _, round := range subject.rounds {
-			body, err := renderRoundResponses(project, subject.subject, round, generated)
+			body, err := renderRoundResponses(round)
 			if err := write(folder+fmt.Sprintf("putaran-%d.xlsx", round.round.Number), body, err); err != nil {
 				return nil, "", err
 			}

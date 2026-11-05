@@ -211,12 +211,9 @@ func TestScoringMethodDrivesActiveMonitoringFinalizationAndWorkbook(t *testing.T
 			}
 			for name, f := range openRoundWorkbooks(t, body) {
 				if strings.Contains(name, "rekap_") {
-					value, _ := strconv.ParseFloat(workbookCell(t, f, "B10"), 64)
+					value, _ := strconv.ParseFloat(workbookCell(t, f, "B2"), 64)
 					if math.Abs(value-tc.want) > 1e-10 {
 						t.Fatal("workbook ignored method", value)
-					}
-					if !strings.Contains(strings.ToLower(workbookCell(t, f, "A7")), tc.method) {
-						t.Fatal("workbook method label missing")
 					}
 				}
 			}

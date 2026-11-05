@@ -2050,6 +2050,7 @@ paths:
       description: >-
         Folder per mapel berisi satu workbook rekap satu sheet (Putaran, Cut-off test, Stdev, ICC)
         dan satu workbook respons satu sheet untuk setiap putaran yang sudah dimulai.
+        Header langsung pada baris 1 dan data mulai baris 2, tanpa baris informasi umum atau catatan di luar tabel.
         Rekap bernama rekap_{kode_proyek}{kode_mapel}{YYYYMMDD}.xlsx, tanggal Asia/Jakarta.
         ICC(2,k) absolute agreement dari matriks persentase lengkap panelis yang diikutkan;
         nilai tidak terdefinisi diberi keterangan. Cut-off memakai rumus berbobot existing dan
