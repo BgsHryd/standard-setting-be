@@ -455,18 +455,23 @@ func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.
 	}
 	scores := []float64{}
 	for _, id := range snap.PanelistIDs {
-		weighted, total := 0.0, 0.0
+		values := map[string]float64{}
 		for _, item := range items {
 			for _, row := range rows {
 				if row.ItemID == item.ID && row.PanelistID == id {
-					weighted += responseValue(row.Answer, item.MaxScore) * float64(item.MaxScore)
-					total += float64(item.MaxScore)
+					values[item.ID] = responseValue(row.Answer, item.MaxScore)
 				}
 			}
 		}
-		scores = append(scores, weighted/total)
+		score, err := testScoreForItems(items, values, p.ScoringMethod)
+		if err != nil {
+			return domain.RoundSnapshot{}, err
+		}
+		scores = append(scores, score)
 	}
 	snap.Statistics = domain.ComputeStatistics(scores, projectRoundingPolicy(p))
+	snap.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
+	snap.Statistics.ScoringMethod = snap.ScoringMethod
 	snap.Statistics.RoundNumber = r.Number
 	snap.Statistics.Revision = snap.Revision
 	snap.Statistics.PanelistIDs = snap.PanelistIDs
@@ -502,7 +507,7 @@ func (s *Service) CopyProject(ctx context.Context, id, name, actor string) (doma
 		for _, sub := range source.Subjects {
 			subjs = append(subjs, domain.ProjectSubject{Code: sub.Code, Name: sub.Name, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: 1, PanelistCount: sub.PanelistCount, PanelistNames: append([]string(nil), sub.PanelistNames...), PICName: sub.PICName, ItemIDs: []string{}, PanelistUserIDs: []string{}})
 		}
-		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, PlannedRounds: source.PlannedRounds, SimulationEnabled: source.SimulationEnabled, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis, RoundingPolicy: source.RoundingPolicy}, actor)
+		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, PlannedRounds: source.PlannedRounds, SimulationEnabled: source.SimulationEnabled, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis, RoundingPolicy: source.RoundingPolicy, ScoringMethod: source.ScoringMethod}, actor)
 		if err != nil {
 			return err
 		}

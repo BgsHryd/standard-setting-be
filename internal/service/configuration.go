@@ -43,6 +43,9 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 	err := s.store.WithTransaction(ctx, func(tx context.Context) error {
 		now := time.Now().UTC()
 		p := input
+		if p.ScoringMethod != "" && p.ScoringMethod != domain.ScoringAverage && p.ScoringMethod != domain.ScoringWeighted {
+			return errors.New("metode skoring wajib average atau weighted")
+		}
 		p.Name = strings.TrimSpace(input.Name)
 		p.UpdatedAt = now
 		p.WizardStep = max(1, min(5, p.WizardStep))
@@ -50,6 +53,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		var old domain.Project
 		users := []domain.User{}
 		if p.ID == "" {
+			p.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
 			p.ID = newID("project")
 			p.Code = "SS-" + strings.ToUpper(p.ID[len(p.ID)-6:])
 			p.CreatedBy = userID
@@ -75,17 +79,30 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			if input.Version != old.Version {
 				return errors.New("konfigurasi sudah berubah; muat ulang sebelum menyimpan")
 			}
+			if p.ScoringMethod == "" {
+				p.ScoringMethod = domain.NormalizeScoringMethod(old.ScoringMethod)
+			}
 			if old.Status == domain.ProjectCompleted {
+				methodChanged := p.ScoringMethod != domain.NormalizeScoringMethod(old.ScoringMethod)
+				old.ScoringMethod = p.ScoringMethod
 				old.EvaluationClosed = input.EvaluationClosed
 				old.Version++
 				old.UpdatedAt = now
 				if err = s.store.TouchProject(tx, old.ID); err != nil {
 					return err
 				}
+				if methodChanged {
+					if err := s.recalculateProjectScoring(tx, &old, userID); err != nil {
+						return err
+					}
+				}
 				if err = s.store.SaveProject(tx, old); err != nil {
 					return err
 				}
 				result = old
+				if methodChanged {
+					return nil
+				}
 				return s.recordAudit(tx, userID, old.ID, old.ID, "evaluation_policy_update")
 			}
 			if err := s.store.TouchProject(tx, p.ID); err != nil {
@@ -296,6 +313,11 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 						return err
 					}
 				}
+			}
+		}
+		if old.ID != "" && p.ScoringMethod != domain.NormalizeScoringMethod(old.ScoringMethod) {
+			if err := s.recalculateProjectScoring(tx, &p, userID); err != nil {
+				return err
 			}
 		}
 		if err := s.store.SaveProject(tx, p); err != nil {

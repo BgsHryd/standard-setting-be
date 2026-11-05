@@ -72,6 +72,7 @@ type Project struct {
 	FeatureVersion        int              `json:"featureVersion" bson:"featureVersion"`
 	CollectContactPanelis bool             `json:"collectContactPanelis" bson:"collectContactPanelis"`
 	RoundingPolicy        string           `json:"roundingPolicy" bson:"roundingPolicy"`
+	ScoringMethod         string           `json:"scoringMethod" bson:"scoringMethod,omitempty"`
 	SourceProjectID       string           `json:"sourceProjectId,omitempty" bson:"sourceProjectId,omitempty"`
 	EvaluationClosed      bool             `json:"evaluationClosed" bson:"evaluationClosed"`
 	Version               int              `json:"version" bson:"version"`
@@ -140,6 +141,7 @@ type Item struct {
 }
 
 type ItemResult struct {
+	ScoringMethod               string    `json:"scoringMethod,omitempty" bson:"scoringMethod,omitempty"`
 	StandardDeviationMethod     string    `json:"standardDeviationMethod" bson:"standardDeviationMethod,omitempty"`
 	PopulationStandardDeviation *float64  `json:"populationStandardDeviation" bson:"populationStandardDeviation,omitempty"`
 	Revision                    int       `json:"revision" bson:"revision"`
@@ -220,6 +222,7 @@ type SnapshotPanelist struct {
 }
 
 type RoundSnapshot struct {
+	ScoringMethod       string                `json:"scoringMethod,omitempty" bson:"scoringMethod,omitempty"`
 	Roster              []SnapshotPanelist    `json:"roster,omitempty" bson:"roster,omitempty"`
 	ID                  string                `json:"id" bson:"id"`
 	Revision            int                   `json:"revision" bson:"revision"`

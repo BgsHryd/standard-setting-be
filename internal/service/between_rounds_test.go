@@ -117,7 +117,7 @@ func TestReviewOutcomesUseMatchingImpactAndProtectReadonlyStart(t *testing.T) {
 	}
 	rounds, _ := st.ListRounds(ctx, p.ID, "MAT")
 	id := rounds[0].FinalSnapshot.ID
-	if err := st.SaveImpactBatch(ctx, domain.ImpactBatch{ID: "impact-qa", ProjectID: p.ID, Scores: []domain.ImpactScore{{ParticipantID: "participant-private", SubjectCode: "MAT", Score: 80}}, Subjects: []domain.ImpactSubject{{SubjectCode: "MAT", CutoffSnapshotID: id, Count: 10, Percentage: 40}}}); err != nil {
+	if err := st.SaveImpactBatch(ctx, domain.ImpactBatch{ID: "impact-qa", ProjectID: p.ID, Scores: []domain.ImpactScore{{ParticipantID: "participant-private", SubjectCode: "MAT", Score: 80}}, Subjects: []domain.ImpactSubject{{SubjectCode: "MAT", CutoffSnapshotID: id, OperationalCutoff: 71.25, ScoringMethod: "weighted", Count: 10, Percentage: 40}}}); err != nil {
 		t.Fatal(err)
 	}
 	summaries, err := st.ListImpactSummaries(ctx, p.ID)

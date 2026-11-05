@@ -260,17 +260,18 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 		if snapshot == nil {
 			scores := []float64{}
 			for _, panelist := range data.panelists {
-				weighted, maximum := 0.0, 0.0
+				values := map[string]float64{}
 				for _, item := range data.items {
-					weighted += data.values[item.ID][panelist.id] * float64(item.MaxScore)
-					maximum += float64(item.MaxScore)
+					values[item.ID] = data.values[item.ID][panelist.id]
 				}
-				if maximum <= 0 {
-					return data, errors.New("skor maksimum butir tidak valid")
+				score, err := testScoreForItems(data.items, values, p.ScoringMethod)
+				if err != nil {
+					return data, err
 				}
-				scores = append(scores, weighted/maximum)
+				scores = append(scores, score)
 			}
 			stats := domain.ComputeStatistics(scores, projectRoundingPolicy(p))
+			stats.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
 			data.statistics = &stats
 		}
 	}

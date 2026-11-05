@@ -24,6 +24,7 @@ type ImpactScore struct {
 	Passed        bool    `json:"passed" bson:"passed"`
 }
 type ImpactSubject struct {
+	ScoringMethod     string  `json:"scoringMethod,omitempty" bson:"scoringMethod,omitempty"`
 	SubjectCode       string  `json:"subjectCode" bson:"subjectCode"`
 	CutoffSnapshotID  string  `json:"cutoffSnapshotId" bson:"cutoffSnapshotId"`
 	RoundingPolicy    string  `json:"roundingPolicy" bson:"roundingPolicy"`

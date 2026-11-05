@@ -371,7 +371,12 @@ paths:
 
         Update Draft dan Active. Version body harus cocok dengan versi tersimpan. Code/status/createdBy tetap;
         perubahan butir hanya sebelum ada respons. Slot personel menjaga identitas existing. Completed
-        terkunci secara struktural.
+        terkunci secara struktural, tetapi scoringMethod dan kebijakan evaluasi dapat diperbarui.
+        scoringMethod menerima average (NBK 2024) atau weighted (NBK 2026, default).
+        Penggantian metode menghitung ulang statistik snapshot final/arsip dan NBK final dari respons
+        historis dalam transaksi yang sama; respons mentah dan revisi putaran dipertahankan.
+        Snapshot historis yang tidak lengkap membatalkan perubahan metode. Field yang tidak dikirim
+        oleh client lama mempertahankan metode tersimpan. Analisis dampak metode lama menjadi stale.
       requestBody:
         $ref: '#/components/requestBodies/ProjectBody'
       responses:
@@ -1955,7 +1960,7 @@ paths:
             default: 0
           description: 0 memilih snapshot final saat ini. Revisi arsip >0 memerlukan round >0.
       description: >-
-        Pilih round/revision arsip untuk inspeksi hasil historis immutable. Data legacy tanpa snapshot diberi
+        Pilih round/revision arsip untuk inspeksi respons historis immutable; statistik tes mengikuti scoringMethod proyek dan dapat dihitung ulang oleh superadmin. Data legacy tanpa snapshot diberi
         warning; tidak diklaim memiliki provenance roster lengkap. Manifest ada dalam payload.
   /projects/{id}/exports:
     parameters:
@@ -3511,6 +3516,11 @@ components:
             type: string
         jti:
           type: string
+    ScoringMethod:
+      type: string
+      enum: [weighted, average]
+      default: weighted
+      description: NBK 2026 Weighted memakai bobot skor maksimum; NBK 2024 Average memakai bobot sama per persentase butir. Field kosong/absen pada proyek lama berarti Weighted.
     Project:
       type: object
       description: >-
@@ -3591,6 +3601,8 @@ components:
           description: 0 legacy; proyek baru menggunakan fitur versi1.
         collectContactPanelis:
           type: boolean
+        scoringMethod:
+          $ref: '#/components/schemas/ScoringMethod'
         roundingPolicy:
           type: string
           enum:
@@ -3826,6 +3838,8 @@ components:
     ItemResult:
       type: object
       properties:
+        scoringMethod:
+          $ref: '#/components/schemas/ScoringMethod'
         panelistIds:
           type: array
           items:
@@ -4052,8 +4066,10 @@ components:
           minimum: 0
     PICItemResults:
       type: object
-      required: [projectCode, subjectCode, subjectName, round, rounds, panelists, items, generatedAt]
+      required: [projectCode, subjectCode, subjectName, round, rounds, panelists, items, generatedAt, scoringMethod]
       properties:
+        scoringMethod:
+          $ref: '#/components/schemas/ScoringMethod'
         projectCode:
           type: string
         subjectCode:
@@ -4327,6 +4343,8 @@ components:
     RoundSnapshot:
       type: object
       properties:
+        scoringMethod:
+          $ref: '#/components/schemas/ScoringMethod'
         id:
           type: string
         revision:
@@ -4954,6 +4972,8 @@ components:
     ImpactSubject:
       type: object
       properties:
+        scoringMethod:
+          $ref: '#/components/schemas/ScoringMethod'
         subjectCode:
           type: string
         cutoffSnapshotId:

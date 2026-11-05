@@ -139,6 +139,17 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 			byItem[item.ID] = item
 		}
 	}
+	if snapshot != nil {
+		frozen, _, err := frozenScoringResponses(*snapshot)
+		if err != nil {
+			return Monitoring{}, err
+		}
+		for id, item := range frozen {
+			if contains(subject.ItemIDs, id) {
+				byItem[id] = item
+			}
+		}
+	}
 	for _, id := range subject.ItemIDs {
 		if item, ok := byItem[id]; ok {
 			ordered = append(ordered, item)
@@ -235,14 +246,15 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 			if p.WorkflowVersion >= 1 && receipt == nil && round.Status == "active" {
 				panelist.Status = "Belum Dikirim"
 			}
-			weighted, total := 0.0, 0.0
+			values := map[string]float64{}
 			for _, item := range ordered {
-				weighted += responseValue(responses[item.ID].Answer, item.MaxScore) * float64(item.MaxScore)
-				total += float64(item.MaxScore)
+				values[item.ID] = responseValue(responses[item.ID].Answer, item.MaxScore)
 			}
-			if total > 0 {
-				scores = append(scores, weighted/total)
+			score, err := testScoreForItems(ordered, values, p.ScoringMethod)
+			if err != nil {
+				return Monitoring{}, err
 			}
+			scores = append(scores, score)
 		} else if panelist.NeedsReview > 0 {
 			panelist.Status = "Perlu Ditinjau"
 		} else if panelist.Done > 0 {
@@ -257,6 +269,7 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	ready := len(scores) == len(panelists) && len(scores) > 0
 	if ready {
 		stats := domain.ComputeStatistics(scores, projectRoundingPolicy(p))
+		stats.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
 		stats.RoundNumber = round.Number
 		stats.Revision = domain.RoundRevision(round)
 		result.Statistics = &stats

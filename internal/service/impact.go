@@ -270,6 +270,7 @@ func parseImpact(report ProjectReport, data []byte) (ImpactPreview, error) {
 		agg := aggregates[sub]
 		if agg == nil {
 			agg = &domain.ImpactSubject{SubjectCode: sub, CutoffSnapshotID: source.SnapshotID, RoundingPolicy: source.RoundingPolicy, Cutoff: source.Statistics.Cutoff, OperationalCutoff: source.Statistics.OperationalCutoff, Distribution: make([]int, 10)}
+			agg.ScoringMethod = domain.NormalizeScoringMethod(source.Statistics.ScoringMethod)
 			aggregates[sub] = agg
 		}
 		agg.Count++
@@ -341,17 +342,24 @@ func (s *Service) ImpactResults(ctx context.Context, id string) ([]domain.Impact
 	if err != nil {
 		return nil, err
 	}
-	latest := map[string]string{}
+	latest := map[string]ReportSubject{}
 	for _, sub := range report.Subjects {
-		latest[sub.Subject.Code] = sub.SnapshotID
+		latest[sub.Subject.Code] = sub
 	}
 	for i := range batches {
 		for j := range batches[i].Subjects {
 			r := &batches[i].Subjects[j]
-			r.Stale = latest[r.SubjectCode] != r.CutoffSnapshotID
+			source, ok := latest[r.SubjectCode]
+			r.Stale = !ok || !source.Available || !impactMatchesResult(*r, source.SnapshotID, source.Statistics)
 		}
 	}
 	return batches, nil
+}
+
+func impactMatchesResult(aggregate domain.ImpactSubject, snapshotID string, stats domain.ItemResult) bool {
+	return aggregate.CutoffSnapshotID == snapshotID &&
+		domain.NormalizeScoringMethod(aggregate.ScoringMethod) == domain.NormalizeScoringMethod(stats.ScoringMethod) &&
+		math.Abs(aggregate.OperationalCutoff-stats.OperationalCutoff) <= 1e-10
 }
 func (s *Service) EvaluationCSV(ctx context.Context, id, locale string) ([]byte, error) {
 	if locale != "id" && locale != "standard" {

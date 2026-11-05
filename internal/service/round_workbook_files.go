@@ -115,7 +115,11 @@ func (w *roundWorkbookSheet) finish(lastRow int) ([]byte, error) {
 func renderRoundSummary(p domain.Project, bundle workbookSubject, at time.Time) ([]byte, error) {
 	w := newRoundWorkbookSheet("Summary", 4)
 	w.metadata(p, bundle.subject, "Ringkasan hasil per putaran", "Cut-off test dan Stdev mengikuti statistik aplikasi; ICC(2,k): absolute agreement, rata-rata panelis.", at)
-	w.line(7, "Cut-off berbobot skor maksimum; Stdev sampel (n-1), dalam poin persentase. ICC dari matriks lengkap.")
+	method := "NBK 2026 - Weighted (bobot skor maksimum)"
+	if p.ScoringMethod == domain.ScoringAverage {
+		method = "NBK 2024 - Average (bobot sama per butir)"
+	}
+	w.line(7, method+". Stdev sampel (n-1), dalam poin persentase.")
 	for i, title := range []string{"Putaran", "Cut-off test", "Stdev", "ICC"} {
 		w.cell(i+1, 9, title)
 	}

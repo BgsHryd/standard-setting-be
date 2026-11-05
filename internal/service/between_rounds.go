@@ -50,26 +50,13 @@ type DiscussionNoteInput struct {
 }
 
 func snapshotMaxScore(snap domain.RoundSnapshot) *float64 {
-	maximums := map[string]int{}
-	for _, row := range snap.Submissions {
-		if _, ok := snap.ItemStatistics[row.ItemID]; !ok {
-			continue
-		}
-		maximum := 1
-		if row.Answer.QuestionType != domain.QuestionTypePG {
-			maximum = len(row.Answer.Distribution) - 1
-		}
-		if maximum < 1 {
-			return nil
-		}
-		maximums[row.ItemID] = maximum
-	}
-	if len(maximums) == 0 || len(maximums) != len(snap.ItemStatistics) {
+	items, _, err := frozenScoringResponses(snap)
+	if err != nil || len(items) == 0 || len(items) != len(snap.ItemStatistics) {
 		return nil
 	}
 	total := 0.0
-	for _, maximum := range maximums {
-		total += float64(maximum)
+	for _, item := range items {
+		total += float64(item.MaxScore)
 	}
 	return &total
 }
@@ -104,7 +91,7 @@ func (s *Service) roundResults(ctx context.Context, user string, p domain.Projec
 		var newest time.Time
 		for _, batch := range batches {
 			for _, aggregate := range batch.Subjects {
-				if aggregate.SubjectCode == subject.Code && aggregate.CutoffSnapshotID == snap.ID && aggregate.Count > 0 && (out.ProjectionPercent == nil || batch.CreatedAt.After(newest)) {
+				if aggregate.SubjectCode == subject.Code && impactMatchesResult(aggregate, snap.ID, snap.Statistics) && aggregate.Count > 0 && (out.ProjectionPercent == nil || batch.CreatedAt.After(newest)) {
 					percent := aggregate.Percentage
 					out.ProjectionPercent, out.ProjectionCount, newest = &percent, aggregate.Count, batch.CreatedAt
 				}
