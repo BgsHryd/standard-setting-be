@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	csvreader "encoding/csv"
 	"standard-setting/backend/internal/domain"
 	"testing"
 )
@@ -27,8 +28,21 @@ func TestArchivedSnapshotSelectionDoesNotBecomeOperationalImpact(t *testing.T) {
 		t.Fatalf("archived revision %+v %v", old, err)
 	}
 	csv, err := s.ExportReportRevision(ctx, p.ID, 1, 1, "standard", "raw")
-	if err != nil || !bytes.Contains(csv, []byte(one.ID)) || bytes.Contains(csv, []byte(two.ID)) {
+	if err != nil {
 		t.Fatalf("revision export %q %v", csv, err)
+	}
+	rows, err := csvreader.NewReader(bytes.NewReader(bytes.TrimPrefix(csv, []byte("\xef\xbb\xbf")))).ReadAll()
+	if err != nil || len(rows) != 2 {
+		t.Fatal("archive CSV response missing", err)
+	}
+	valueIndex := -1
+	for i, header := range rows[0] {
+		if header == "value" {
+			valueIndex = i
+		}
+	}
+	if valueIndex < 0 || rows[1][valueIndex] != "60" {
+		t.Fatal("archive CSV contains current revision instead of historical answer")
 	}
 	if _, err = s.ProjectReportRevision(ctx, p.ID, 0, 1); err == nil {
 		t.Fatal("revision without round accepted")

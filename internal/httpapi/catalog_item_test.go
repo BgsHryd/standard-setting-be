@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,14 +17,85 @@ import (
 
 type catalogMetadataStore struct {
 	service.Store
-	items []domain.Item
+	items    []domain.Item
+	projects []domain.Project
+	touched  []string
+}
+
+func (st *catalogMetadataStore) ListProjects(context.Context) ([]domain.Project, error) {
+	return st.projects, nil
+}
+func (st *catalogMetadataStore) TouchProject(_ context.Context, id string) error {
+	st.touched = append(st.touched, id)
+	return nil
 }
 
 func (st *catalogMetadataStore) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
 func (st *catalogMetadataStore) ListSubjects(context.Context) ([]domain.Subject, error) {
-	return []domain.Subject{{Code: "MAT", Name: "Matematika"}}, nil
+	return []domain.Subject{{Code: "MAT", Name: "Matematika"}, {Code: "BIN", Name: "Bahasa Indonesia"}}, nil
+}
+
+func TestAllocatedItemMetadataEditableWithoutChangingAllocation(t *testing.T) {
+	now := time.Now().UTC().Add(-time.Hour)
+	old := domain.Item{ID: "MAT-001", SubjectCode: "MAT", SubjectName: "Matematika", QuestionType: domain.QuestionTypePG, MaxScore: 1, KJ: "A", UsageStatus: domain.ItemAllocated, ProjectID: "p1", ProjectName: "Proyek pertama", ProjectHistory: []domain.ItemProjectUsage{{ProjectID: "p1"}, {ProjectID: "p2"}}, CreatedAt: now, FinalResult: &domain.ItemResult{Mean: 65}}
+	st := &catalogMetadataStore{items: []domain.Item{old}, projects: []domain.Project{
+		{ID: "p1", Subjects: []domain.ProjectSubject{{Code: "MAT", ItemIDs: []string{old.ID}}}},
+		{ID: "p2", Subjects: []domain.ProjectSubject{{Code: "MAT", ItemIDs: []string{old.ID}}}},
+		{ID: "other", Subjects: []domain.ProjectSubject{{Code: "MAT", ItemIDs: []string{"OTHER"}}}},
+	}}
+	h := &Handler{service: service.New(st, nil, "")}
+	app := fiber.New()
+	app.Post("/items", h.saveItems)
+	body := `{"items":[{"id":"MAT-001","subjectCode":"MAT","subjectName":"Matematika","questionType":"pilihan_ganda_kompleks_bs","maxScore":3,"kj":"BSB","measure":-1.25,"measureCategory":"Sukar","rubric":["Rubrik baru"],"usageStatus":"available","projectId":"forged"}]}`
+	req := httptest.NewRequest("POST", "/items", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("allocated metadata rejected: status %d", res.StatusCode)
+	}
+	got := st.items[0]
+	if got.QuestionType != domain.QuestionTypeComplexBS || got.MaxScore != 3 || got.KJ != "BSB" || got.Measure == nil || *got.Measure != -1.25 || got.MeasureCategory != "Sukar" || len(got.Rubric) != 1 || got.Rubric[0] != "Rubrik baru" {
+		t.Fatal("metadata not saved", got)
+	}
+	if got.ID != old.ID || got.SubjectCode != old.SubjectCode || got.UsageStatus != old.UsageStatus || got.ProjectID != old.ProjectID || got.ProjectName != old.ProjectName || !reflect.DeepEqual(got.ProjectHistory, old.ProjectHistory) || !reflect.DeepEqual(got.FinalResult, old.FinalResult) || !got.CreatedAt.Equal(old.CreatedAt) || !got.UpdatedAt.After(old.CreatedAt) {
+		t.Fatal("allocation/lifecycle changed", got)
+	}
+	if !reflect.DeepEqual(st.touched, []string{"p1", "p2"}) {
+		t.Fatal("shared projects were not serialized with grading writes", st.touched)
+	}
+}
+
+func TestAllocatedItemSubjectAndTestedMetadataRemainLocked(t *testing.T) {
+	for _, kind := range []string{"subject", "tested", "readOnly"} {
+		t.Run(kind, func(t *testing.T) {
+			old := domain.Item{ID: "MAT-001", SubjectCode: "MAT", SubjectName: "Matematika", QuestionType: domain.QuestionTypePG, MaxScore: 1, KJ: "A", UsageStatus: domain.ItemAllocated}
+			if kind == "tested" {
+				old.UsageStatus = domain.ItemTested
+			}
+			if kind == "readOnly" {
+				old.ReadOnly = true
+			}
+			st := &catalogMetadataStore{items: []domain.Item{old}}
+			updated := old
+			updated.KJ = "B"
+			if kind == "subject" {
+				updated.SubjectCode = "BIN"
+				updated.SubjectName = "Bahasa Indonesia"
+			}
+			if err := service.New(st, nil, "").UpsertItems(context.Background(), []domain.Item{updated}); err == nil {
+				t.Fatal("locked item edit accepted", kind)
+			}
+			if !reflect.DeepEqual(st.items[0], old) {
+				t.Fatal("rejected edit changed item")
+			}
+		})
+	}
 }
 func (st *catalogMetadataStore) GetItem(_ context.Context, id string) (domain.Item, error) {
 	for _, item := range st.items {

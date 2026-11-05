@@ -946,11 +946,13 @@ paths:
       x-roles:
         - admin_super
       operationId: saveItems
-      summary: Create atau update metadata butir available
+      summary: Create atau update metadata butir available dan allocated
       description: |
         Tombol tambah/edit FE mengirim metadata. Wajib id, subjectCode, subjectName,
-        questionType dan maxScore valid. Butir allocated atau tested tidak dapat diubah.
-        UsageStatus, pemilik, readOnly, finalResult dan timestamp ditentukan server.
+        questionType dan maxScore valid. Metadata butir allocated dapat diubah, tetapi ID dan
+        mata pelajarannya tetap. Butir tested/readOnly tidak dapat diubah.
+        Alokasi, riwayat proyek, readOnly, finalResult dan createdAt lama dipertahankan;
+        updatedAt ditentukan server. Perubahan diserialisasi dengan aktivitas proyek terkait.
       requestBody:
         required: true
         content:
@@ -2026,9 +2028,60 @@ paths:
       description: >-
         Raw satu baris panelis×butir×round, termasuk flag included/reviewed/missing dan distributionJSON.
         Summary agregat. Kontak, password, hash, token dan catatan tidak masuk CSV umum.
-        Versi/schema/snapshot/round/revision/generatedAt tersedia sebagai provenance; legacy diberi label
-        eksplisit. Raw menambahkan rosterComplete, activeAtSnapshot, removedAtSnapshot, exclusionReason;
-        status historis kosong bila roster lengkap tidak tersedia.
+        Raw schemaVersion 2 menghapus snapshotId, legacy, historical, activeAtSnapshot,
+        removedAtSnapshot dan status. Nilai PG dan distributionJSON tetap berupa respons asli,
+        bukan skor akhir tes panelis. Raw mempertahankan round/revision/generatedAt,
+        rosterComplete dan exclusionReason. Summary tetap schemaVersion 1.
+  /projects/{id}/round-workbooks:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Reports
+      x-roles:
+        - admin_super
+      operationId: roundWorkbooks
+      summary: Unduh ZIP Excel ringkasan dan respons seluruh putaran
+      description: >-
+        Folder per mapel berisi satu workbook rekap satu sheet (Putaran, Cut-off test, Stdev, ICC)
+        dan satu workbook respons satu sheet untuk setiap putaran yang sudah dimulai.
+        Rekap bernama rekap_{kode_proyek}{kode_mapel}{YYYYMMDD}.xlsx, tanggal Asia/Jakarta.
+        ICC(2,k) absolute agreement dari matriks persentase lengkap panelis yang diikutkan;
+        nilai tidak terdefinisi diberi keterangan. Cut-off memakai rumus berbobot existing dan
+        Stdev sampel. Putaran terkunci memakai snapshot dan roster saat finalisasi; putaran aktif
+        memakai respons valid tersimpan dan ditandai sementara. Respons kosong tidak diisi nol.
+        Proyek selain completed wajib confirmed=true, setelah konfirmasi pengguna.
+      parameters:
+        - name: subjectCode
+          in: query
+          schema:
+            type: string
+            default: all
+          description: all atau kosong untuk seluruh mapel; kode mapel proyek untuk satu mapel.
+        - name: confirmed
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Hanya literal true/false. Wajib true untuk proyek yang belum selesai.
+      responses:
+        '200':
+          description: ZIP dengan workbook XLSX, Content-Disposition attachment dan Cache-Control no-store.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: EXPORT_CONFIRMATION_REQUIRED, proyek belum selesai dan konfirmasi belum diberikan.
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/SecurityUnavailable'
   /projects/{id}/impact/template:
     parameters:
       - $ref: '#/components/parameters/ProjectId'

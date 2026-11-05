@@ -82,6 +82,47 @@ func fixture(t *testing.T, active bool) (context.Context, *Service, *store.Mongo
 }
 
 func intValue(v int) *int { return &v }
+
+func TestAllocatedCatalogEditsPreserveProjectAndExistingAnswers(t *testing.T) {
+	ctx, s, st, project := fixture(t, true)
+	item, err := st.GetItem(ctx, "MAT-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := item
+	if _, err := s.SaveSubmission(ctx, "p1", "A", project.ID, "MAT", 1, item.ID, domain.Answer{QuestionType: domain.QuestionTypePG, Value: intValue(65)}); err != nil {
+		t.Fatal(err)
+	}
+	measure := -1.25
+	item.KJ, item.Measure, item.MeasureCategory, item.Rubric = "B", &measure, "Sukar", []string{"Catatan diperbarui"}
+	if err := s.UpsertItems(ctx, []domain.Item{item}); err != nil {
+		t.Fatal("allocated edit rejected", err)
+	}
+	saved, err := st.GetItem(ctx, item.ID)
+	if err != nil || saved.UsageStatus != before.UsageStatus || saved.ProjectID != before.ProjectID || saved.ProjectName != before.ProjectName || saved.ID != before.ID || saved.KJ != "B" {
+		t.Fatal("allocation lost", saved, err)
+	}
+	form, err := s.PanelistForm(ctx, "p1", project.ID, "MAT")
+	if err != nil || len(form.Items) != 3 || form.Items[0].KJ != "B" || form.Items[0].MeasureCategory != "Sukar" {
+		t.Fatal("panelist did not receive updated metadata", form, err)
+	}
+	rows, err := st.ListSubmissions(ctx, project.ID, "MAT", 1, "p1")
+	if err != nil || len(rows) != 1 || rows[0].Answer.Value == nil || *rows[0].Answer.Value != 65 {
+		t.Fatal("existing response changed", rows, err)
+	}
+	saved.QuestionType, saved.MaxScore = domain.QuestionTypeComplexMCMA, 3
+	if err := s.UpsertItems(ctx, []domain.Item{saved}); err != nil {
+		t.Fatal("type/score edit rejected", err)
+	}
+	rows, err = st.ListSubmissions(ctx, project.ID, "MAT", 1, "p1")
+	if err != nil || len(rows) != 1 || rows[0].Answer.QuestionType != domain.QuestionTypePG {
+		t.Fatal("catalog edit rewrote a response", rows, err)
+	}
+	if _, err := s.SaveSubmissionWithOptions(ctx, "p1", "A", project.ID, "MAT", 1, item.ID, domain.Answer{QuestionType: domain.QuestionTypeComplexMCMA, Distribution: []int{10, 20, 30, 40}}, SubmissionOptions{RoundRevision: 1, Version: rows[0].Version}); err != nil {
+		t.Fatal("updated item can no longer be scored", err)
+	}
+}
+
 func fillRound(t *testing.T, ctx context.Context, s *Service, p domain.Project, round, delta int) {
 	t.Helper()
 	for i, id := range []string{"p1", "p2"} {

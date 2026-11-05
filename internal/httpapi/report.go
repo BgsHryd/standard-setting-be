@@ -15,6 +15,7 @@ import (
 func (h *Handler) registerReportingRoutes(admin fiber.Router, adminRole fiber.Handler, panelist fiber.Router) {
 	admin.Get("/projects/:id/reports", adminRole, h.projectReport)
 	admin.Get("/projects/:id/exports", adminRole, h.exportReport)
+	admin.Get("/projects/:id/round-workbooks", adminRole, h.roundWorkbooks)
 	admin.Get("/projects/:id/impact/template", adminRole, h.impactTemplate)
 	admin.Post("/projects/:id/impact/preview", adminRole, h.impactPreview)
 	admin.Post("/projects/:id/impact/apply", adminRole, h.impactApply)

@@ -179,19 +179,47 @@ func (s *Service) UpsertItems(ctx context.Context, items []domain.Item) error {
 				return err
 			}
 			if err == nil {
-				if old.UsageStatus != domain.ItemAvailable || old.ReadOnly || old.ProjectID != "" {
-					return errors.New("butir yang dialokasikan atau sudah diuji hanya dapat dilihat")
+				if (old.UsageStatus != domain.ItemAvailable && old.UsageStatus != domain.ItemAllocated) || old.ReadOnly || (old.UsageStatus == domain.ItemAvailable && old.ProjectID != "") {
+					return errors.New("butir yang sudah diuji atau terkunci hanya dapat dilihat")
+				}
+				if old.UsageStatus == domain.ItemAllocated {
+					if item.SubjectCode != old.SubjectCode {
+						return errors.New("mata pelajaran butir yang dialokasikan tidak dapat diubah")
+					}
+					// Serialize metadata changes with grading/configuration in every project
+					// using this item, including shared allocations.
+					projects, err := s.store.ListProjects(tx)
+					if err != nil {
+						return err
+					}
+					for _, project := range projects {
+						used := project.ID == old.ProjectID
+						for _, subject := range project.Subjects {
+							used = used || contains(subject.ItemIDs, old.ID)
+						}
+						if used {
+							if err := s.store.TouchProject(tx, project.ID); err != nil {
+								return err
+							}
+						}
+					}
 				}
 				item.CreatedAt = old.CreatedAt
 				item.ProjectHistory = old.ProjectHistory
+				item.UsageStatus = old.UsageStatus
+				item.ProjectID = old.ProjectID
+				item.ProjectName = old.ProjectName
+				item.ReadOnly = old.ReadOnly
+				item.FinalResult = old.FinalResult
 			} else {
 				item.CreatedAt = time.Now().UTC()
+				item.ProjectHistory = nil
+				item.UsageStatus = domain.ItemAvailable
+				item.ProjectID = ""
+				item.ProjectName = ""
+				item.ReadOnly = false
+				item.FinalResult = nil
 			}
-			item.UsageStatus = domain.ItemAvailable
-			item.ProjectID = ""
-			item.ProjectName = ""
-			item.ReadOnly = false
-			item.FinalResult = nil
 			item.UpdatedAt = time.Now().UTC()
 		}
 		return s.store.UpsertItems(tx, items)

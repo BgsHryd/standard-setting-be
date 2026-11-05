@@ -7,7 +7,7 @@ import (
 )
 
 func TestReportingRoutesRoleGuards(t *testing.T) {
-	adminRoutes := []struct{ method, path string }{{"GET", "reports"}, {"GET", "exports"}, {"GET", "impact/template"}, {"GET", "impact"}, {"POST", "impact/preview"}, {"POST", "impact/apply"}, {"GET", "evaluations"}, {"GET", "evaluations/export"}}
+	adminRoutes := []struct{ method, path string }{{"GET", "reports"}, {"GET", "exports"}, {"GET", "round-workbooks"}, {"GET", "impact/template"}, {"GET", "impact"}, {"POST", "impact/preview"}, {"POST", "impact/apply"}, {"GET", "evaluations"}, {"GET", "evaluations/export"}}
 	for _, route := range adminRoutes {
 		for _, role := range []domain.Role{domain.RoleAdminSuper, domain.RolePICMapel, domain.RolePanelist} {
 			t.Run(string(role)+route.method+route.path, func(t *testing.T) {

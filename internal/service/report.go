@@ -340,17 +340,15 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 				reviewed = nil
 				missing = nil
 			}
-			var active, removed, reason any
+			var reason any
 			if response.Roster != nil {
-				active = response.Roster.Active
-				removed = response.Roster.Removed
 				reason = response.Roster.ExclusionReason
 			}
-			rows = append(rows, []any{1, id, report.Project.Code, sub.Subject.Code, sub.Round.Number, sub.Round.Revision, sub.SnapshotID, sub.Legacy, sub.Historical, row.PanelistID, row.PanelistName, row.ItemID, string(row.Answer.QuestionType), val, distribution, row.Status, included, reviewed, missing, row.Version, row.CandidateVersion, sub.RoundingPolicy, updated, report.GeneratedAt.Format(time.RFC3339), sub.RosterComplete, active, removed, reason})
+			rows = append(rows, []any{2, id, report.Project.Code, sub.Subject.Code, sub.Round.Number, sub.Round.Revision, row.PanelistID, row.PanelistName, row.ItemID, string(row.Answer.QuestionType), val, distribution, included, reviewed, missing, row.Version, row.CandidateVersion, sub.RoundingPolicy, updated, report.GeneratedAt.Format(time.RFC3339), sub.RosterComplete, reason})
 		}
 	}
 	if kind == "raw" {
-		headers = []string{"schemaVersion", "projectId", "projectCode", "subjectCode", "round", "revision", "snapshotId", "legacy", "historical", "panelistId", "panelistName", "itemId", "questionType", "value", "distributionJSON", "status", "included", "reviewed", "missing", "submissionVersion", "candidateVersion", "roundingPolicy", "updatedAt", "generatedAt", "rosterComplete", "activeAtSnapshot", "removedAtSnapshot", "exclusionReason"}
+		headers = []string{"schemaVersion", "projectId", "projectCode", "subjectCode", "round", "revision", "panelistId", "panelistName", "itemId", "questionType", "value", "distributionJSON", "included", "reviewed", "missing", "submissionVersion", "candidateVersion", "roundingPolicy", "updatedAt", "generatedAt", "rosterComplete", "exclusionReason"}
 	}
 	return encodeReportCSV(headers, rows, locale)
 }
