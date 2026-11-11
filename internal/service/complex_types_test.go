@@ -47,7 +47,11 @@ func TestCatalogWorkbookImportsBothComplexSubtypes(t *testing.T) {
 	} {
 		t.Run(tc.label, func(t *testing.T) {
 			st := &catalogImportMemory{subjects: []domain.Subject{{Code: "MAT", Name: "Matematika"}}, items: map[string]domain.Item{}}
-			data := catalogWorkbook(t, "items", []any{"TEST", "MAT", tc.label, "3", "A,C", "", "Rubrik skor"})
+			key := "A,C"
+			if tc.kind == domain.QuestionTypeComplexBS {
+				key = "BSB"
+			}
+			data := catalogWorkbook(t, "items", []any{"TEST", "MAT", tc.label, "3", key, "", "Rubrik skor", "", 3})
 			result, err := New(st, nil, "").ImportCatalogWorkbook(context.Background(), "items", data, true)
 			if err != nil || !result.Applied || st.items["TEST"].QuestionType != tc.kind || st.items["TEST"].MaxScore != 3 {
 				t.Fatalf("%+v %v %+v", result, err, st.items)
@@ -82,7 +86,10 @@ func TestComplexSubtypeCatalogSetupKeepsSameMaxScoreAndRubric(t *testing.T) {
 	for _, kind := range []domain.QuestionType{"pilihan_ganda_kompleks_mcma", "pilihan_ganda_kompleks_bs"} {
 		st := &complexCatalogMemory{catalogImportMemory{subjects: []domain.Subject{{Code: "MAT", Name: "Matematika"}}, items: map[string]domain.Item{}}}
 		s := New(st, nil, "")
-		item := domain.Item{ID: "TEST", SubjectCode: "MAT", SubjectName: "Matematika", QuestionType: kind, MaxScore: 3, KJ: "A,C", Rubric: []string{"0", "1", "2", "3"}}
+		item := domain.Item{ID: "TEST", SubjectCode: "MAT", SubjectName: "Matematika", QuestionType: kind, MaxScore: 3, OptionCount: intValue(3), KJ: "A,C", Rubric: []string{"0", "1", "2", "3"}}
+		if kind == domain.QuestionTypeComplexBS {
+			item.KJ = "BSB"
+		}
 		if err := s.UpsertItems(context.Background(), []domain.Item{item}); err != nil {
 			t.Fatal(kind, err)
 		}

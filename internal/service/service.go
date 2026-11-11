@@ -178,6 +178,13 @@ func (s *Service) UpsertItems(ctx context.Context, items []domain.Item) error {
 			if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
 				return err
 			}
+			requireOptions := err != nil || old.OptionCount != nil || old.QuestionType != item.QuestionType
+			if err := domain.ValidateItemOptions(item.QuestionType, item.OptionCount, item.KJ, requireOptions); err != nil {
+				return err
+			}
+			if !item.QuestionType.RequiresOptionCount() {
+				item.OptionCount = nil
+			}
 			if err == nil {
 				if (old.UsageStatus != domain.ItemAvailable && old.UsageStatus != domain.ItemAllocated) || old.ReadOnly || (old.UsageStatus == domain.ItemAvailable && old.ProjectID != "") {
 					return errors.New("butir yang sudah diuji atau terkunci hanya dapat dilihat")

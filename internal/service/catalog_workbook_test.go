@@ -49,7 +49,7 @@ func catalogWorkbook(t *testing.T, kind string, rows ...[]any) []byte {
 	f.SetSheetName("Sheet1", "Data")
 	headers := []any{"kode_mapel", "mata_pelajaran"}
 	if kind == "items" {
-		headers = []any{"id_butir", "kode_mapel", "bentuk_soal", "skor_maksimum", "kj", "measure", "rubrik"}
+		headers = []any{"id_butir", "kode_mapel", "bentuk_soal", "skor_maksimum", "kj", "measure", "rubrik", "kategori_measure", "jumlah_opsi"}
 	}
 	f.SetSheetRow("Data", "A1", &headers)
 	for n, row := range rows {
@@ -83,11 +83,11 @@ func TestCatalogWorkbookRejectsEveryInvalidRowWithoutPartialWrites(t *testing.T)
 	st := &catalogImportMemory{subjects: []domain.Subject{{Code: "MAT", Name: "Matematika"}}, items: map[string]domain.Item{}}
 	s := New(st, nil, "")
 	data := catalogWorkbook(t, "items",
-		[]any{"NEW-001", "MAT", "Pilihan Ganda", "1", "A", "", ""},
+		[]any{"NEW-001", "MAT", "Pilihan Ganda", "1", "A", "", "", "", 4},
 		[]any{},
 		[]any{"NEW-002", "MISSING", "essay", "0", "Kunci", "", ""},
 		[]any{"NEW-001", "MAT", "tidak valid", "1.5", "A", "", ""},
-		[]any{"NEW-003", "MAT", "pilihan_ganda", "2", "B", "", ""},
+		[]any{"NEW-003", "MAT", "pilihan_ganda", "2", "B", "", "", "", 4},
 	)
 	result, err := s.ImportCatalogWorkbook(context.Background(), "items", data, true)
 	if err != nil || result.Valid || result.Applied || result.Count != 4 || len(st.items) != 0 {
@@ -296,5 +296,49 @@ func TestCatalogWorkbookConcurrentImportsCannotOverwriteOrLeavePartialItems(t *t
 		if (i == winner && err != nil) || (i != winner && !errors.Is(err, mongo.ErrNoDocuments)) {
 			t.Fatalf("partial batch %s: winner %d, error %v", id, winner, err)
 		}
+	}
+}
+
+func TestCatalogWorkbookRequiresExplicitOptionCount(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, key, count string
+		valid                  bool
+	}{
+		{"missing PG", "Pilihan Ganda", "A", "", false},
+		{"missing BS", "Pilihan Ganda Kompleks BS", "BSB", "", false},
+		{"missing MCMA", "Pilihan Ganda Kompleks MCMA", "A,C", "", false},
+		{"valid PG", "Pilihan Ganda", "D", "4", true},
+		{"valid BS", "Pilihan Ganda Kompleks BS", "SBSBS", "5", true},
+		{"valid MCMA", "Pilihan Ganda Kompleks MCMA", "A,E", "5", true},
+		{"invalid key", "Pilihan Ganda Kompleks MCMA", "A,F", "5", false},
+		{"invalid count", "Pilihan Ganda", "A", "2.5", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &catalogImportMemory{subjects: []domain.Subject{{Code: "MAT", Name: "Matematika"}}, items: map[string]domain.Item{}}
+			s := New(st, nil, "")
+			data, err := s.CatalogWorkbookTemplate(context.Background(), "items")
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := excelize.OpenReader(bytes.NewReader(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			row := []any{"OPT", "MAT", tc.kind, "1", tc.key, "", "", "", tc.count}
+			f.SetSheetRow("Data", "A2", &row)
+			// Assert against the template generated for users, not a test-only header.
+			header, _ := f.GetCellValue("Data", "I1")
+			if header != "jumlah_opsi" {
+				t.Fatalf("missing jumlah_opsi header: %q", header)
+			}
+			result, err := s.ImportCatalogWorkbook(context.Background(), "items", workbookBytes(t, f), true)
+			if err != nil || result.Valid != tc.valid || result.Applied != tc.valid {
+				t.Fatalf("%+v %v", result, err)
+			}
+			if !tc.valid && len(st.items) != 0 {
+				t.Fatal("invalid workbook partially stored")
+			}
+		})
 	}
 }

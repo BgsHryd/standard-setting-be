@@ -21,6 +21,7 @@ type CatalogWorkbookRow struct {
 	ItemID          string              `json:"itemId,omitempty"`
 	QuestionType    domain.QuestionType `json:"questionType,omitempty"`
 	MaxScore        int                 `json:"maxScore,omitempty"`
+	OptionCount     *int                `json:"optionCount,omitempty"`
 	KJ              string              `json:"kj,omitempty"`
 	Measure         *float64            `json:"measure,omitempty"`
 	MeasureCategory string              `json:"measureCategory,omitempty"`
@@ -41,7 +42,7 @@ func catalogHeaders(kind string) ([]string, error) {
 	case "subjects":
 		return []string{"kode_mapel", "mata_pelajaran"}, nil
 	case "items":
-		return []string{"id_butir", "kode_mapel", "bentuk_soal", "skor_maksimum", "kj", "measure", "rubrik", "kategori_measure"}, nil
+		return []string{"id_butir", "kode_mapel", "bentuk_soal", "skor_maksimum", "kj", "measure", "rubrik", "kategori_measure", "jumlah_opsi"}, nil
 	default:
 		return nil, errors.New("jenis impor harus items atau subjects")
 	}
@@ -81,7 +82,8 @@ func (s *Service) CatalogWorkbookTemplate(ctx context.Context, kind string) ([]b
 			"kode_mapel harus sudah terdaftar; lihat sheet Referensi mapel. ID butir wajib dan maksimal 200 karakter.",
 			"bentuk_soal: Pilihan Ganda, Pilihan Ganda Kompleks MCMA, Pilihan Ganda Kompleks BS, Essay; atau pilihan_ganda, pilihan_ganda_kompleks_mcma, pilihan_ganda_kompleks_bs, essay. PG Kompleks/pilihan_ganda_kompleks tetap diterima untuk kompatibilitas data lama.",
 			"skor_maksimum: bilangan bulat 1–100. Pilihan Ganda wajib 1. rubrik boleh kosong, maksimal 8000 karakter; satu catatan per baris dalam sel.",
-			"kj: kunci jawaban wajib diisi, maksimal 8000 karakter; contoh A, A,C, atau kunci jawaban essay.",
+			"jumlah_opsi: wajib bilangan bulat 1–100 untuk Pilihan Ganda, MCMA, dan BS; independen dari skor_maksimum. Essay dan PG Kompleks lama tidak memerlukannya.",
+			"kj: wajib maksimal 8000 karakter. PG: satu label (A); MCMA: label unik dipisah koma tanpa spasi (A,C,E); BS: B/S tanpa pemisah sebanyak jumlah_opsi (SBSBS). Label harus sesuai jumlah_opsi.",
 			"measure: opsional, angka bulat/desimal positif atau negatif; contoh 0, -2, 1.25, -1,25. Kosong berarti belum ada nilai; nol tetap disimpan. Jangan gunakan pemisah ribuan.",
 			"kategori_measure: Sukar, Sedang, atau Mudah; dipilih manual, tidak ditentukan oleh angka measure. Boleh kosong untuk data yang belum dikategorikan.",
 			"Butir baru berstatus Tersedia. Alokasi ke proyek dilakukan melalui konfigurasi proyek.",
@@ -132,9 +134,9 @@ func (s *Service) ImportCatalogWorkbook(ctx context.Context, kind string, data [
 	if len(rows) > workbookRows+1 {
 		return result, fmt.Errorf("%w: maksimal 5000 baris data", ErrInvalidCatalogWorkbook)
 	}
-	// Keep previously downloaded seven-column templates valid; append the new field only.
-	if kind == "items" && reflect.DeepEqual(rows[0], headers[:len(headers)-1]) {
-		headers = headers[:len(headers)-1]
+	// Older templates remain readable, but new choice items still require jumlah_opsi.
+	if kind == "items" && (reflect.DeepEqual(rows[0], headers[:7]) || reflect.DeepEqual(rows[0], headers[:8])) {
+		headers = headers[:len(rows[0])]
 	}
 	err = s.store.WithTransaction(ctx, func(tx context.Context) error {
 		result = CatalogWorkbookPreview{Rows: []CatalogWorkbookRow{}, Errors: []WorkbookError{}}
@@ -240,6 +242,18 @@ func (s *Service) ImportCatalogWorkbook(ctx context.Context, kind string, data [
 			if err := domain.ValidateItemMetadata(key, nil); err != nil {
 				problem(n+1, "kj", key, err.Error())
 			}
+			var optionCount *int
+			if questionType.RequiresOptionCount() {
+				count, countErr := strconv.Atoi(cell(row, 8))
+				if countErr != nil || count < 1 || count > 100 {
+					problem(n+1, "jumlah_opsi", cell(row, 8), "jumlah opsi wajib bilangan bulat 1–100")
+				} else {
+					optionCount = &count
+					if err := domain.ValidateItemOptions(questionType, optionCount, key, true); err != nil {
+						problem(n+1, "kj", key, err.Error())
+					}
+				}
+			}
 			measure, measureErr := domain.ParseMeasure(cell(row, 5))
 			if measureErr != nil {
 				problem(n+1, "measure", cell(row, 5), measureErr.Error())
@@ -260,9 +274,9 @@ func (s *Service) ImportCatalogWorkbook(ctx context.Context, kind string, data [
 			}
 			now := time.Now().UTC()
 			items = append(items, domain.Item{ID: id, SubjectCode: sub.Code, SubjectName: sub.Name,
-				QuestionType: questionType, MaxScore: score, KJ: key, Measure: measure, MeasureCategory: category, Rubric: rubric, UsageStatus: domain.ItemAvailable,
+				QuestionType: questionType, MaxScore: score, OptionCount: optionCount, KJ: key, Measure: measure, MeasureCategory: category, Rubric: rubric, UsageStatus: domain.ItemAvailable,
 				ProjectHistory: []domain.ItemProjectUsage{}, CreatedAt: now, UpdatedAt: now})
-			result.Rows = append(result.Rows, CatalogWorkbookRow{Row: n + 1, Code: sub.Code, Name: sub.Name, ItemID: id, QuestionType: questionType, MaxScore: score, KJ: key, Measure: measure, MeasureCategory: category})
+			result.Rows = append(result.Rows, CatalogWorkbookRow{Row: n + 1, Code: sub.Code, Name: sub.Name, ItemID: id, QuestionType: questionType, MaxScore: score, OptionCount: optionCount, KJ: key, Measure: measure, MeasureCategory: category})
 		}
 		if result.Count == 0 {
 			problem(2, "baris", "", "isi minimal satu baris data")

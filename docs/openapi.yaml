@@ -3802,6 +3802,12 @@ components:
           $ref: '#/components/schemas/QuestionType'
         maxScore:
           type: integer
+        optionCount:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100
+          description: Wajib pada butir baru PG, MCMA, dan BS. Independen dari maxScore. Data lama tanpa atribut ini tetap kosong tanpa fallback; setelah diisi tidak boleh dikosongkan. PG harus satu label opsi, MCMA label unik dipisah koma tanpa spasi, BS rangkaian B/S sepanjang optionCount.
         rubric:
           type: array
           items:

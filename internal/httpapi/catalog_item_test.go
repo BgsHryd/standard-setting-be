@@ -48,7 +48,7 @@ func TestAllocatedItemMetadataEditableWithoutChangingAllocation(t *testing.T) {
 	h := &Handler{service: service.New(st, nil, "")}
 	app := fiber.New()
 	app.Post("/items", h.saveItems)
-	body := `{"items":[{"id":"MAT-001","subjectCode":"MAT","subjectName":"Matematika","questionType":"pilihan_ganda_kompleks_bs","maxScore":3,"kj":"BSB","measure":-1.25,"measureCategory":"Sukar","rubric":["Rubrik baru"],"usageStatus":"available","projectId":"forged"}]}`
+	body := `{"items":[{"id":"MAT-001","subjectCode":"MAT","subjectName":"Matematika","questionType":"pilihan_ganda_kompleks_bs","maxScore":3,"optionCount":3,"kj":"BSB","measure":-1.25,"measureCategory":"Sukar","rubric":["Rubrik baru"],"usageStatus":"available","projectId":"forged"}]}`
 	req := httptest.NewRequest("POST", "/items", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	res, err := app.Test(req)
@@ -120,9 +120,9 @@ func TestAdminItemMetadataRequiresKJAndRoundTripsNumericMeasure(t *testing.T) {
 		wantKey        string
 		wantMeasure    any
 	}{
-		{"negative", `"kj":" A,C ","measure":-1.25`, 200, "A,C", -1.25},
-		{"zero", `"kj":"0","measure":0`, 200, "0", 0.0},
-		{"absent measure", `"kj":"A"`, 200, "A", nil},
+		{"negative", `"kj":" A ","measure":-1.25,"optionCount":4`, 200, "A", -1.25},
+		{"zero", `"kj":"B","measure":0,"optionCount":4`, 200, "B", 0.0},
+		{"absent measure", `"kj":"A","optionCount":4`, 200, "A", nil},
 		{"missing key", `"measure":2`, 409, "", nil},
 		{"blank key", `"kj":"  ","measure":-2`, 409, "", nil},
 		{"non-numeric measure", `"kj":"A","measure":"abc"`, 422, "", nil},
@@ -171,6 +171,75 @@ func TestAdminItemMetadataRequiresKJAndRoundTripsNumericMeasure(t *testing.T) {
 				}
 				if item["kj"] != tc.wantKey || item["measure"] != tc.wantMeasure {
 					t.Fatalf("metadata lost on %s: %+v", path, item)
+				}
+			}
+		})
+	}
+}
+
+func TestCatalogOptionCountRequiredAndValidatesKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, key, count string
+		existing               bool
+		status                 int
+	}{
+		{"new PG missing", "pilihan_ganda", "A", "", false, 409},
+		{"new MCMA missing", "pilihan_ganda_kompleks_mcma", "A,C", "", false, 409},
+		{"new BS missing", "pilihan_ganda_kompleks_bs", "BSB", "", false, 409},
+		{"PG valid", "pilihan_ganda", "D", `,"optionCount":4`, false, 200},
+		{"PG extended label", "pilihan_ganda", "CV", `,"optionCount":100`, false, 200},
+		{"PG past extended limit", "pilihan_ganda", "CW", `,"optionCount":100`, false, 409},
+		{"PG lowercase", "pilihan_ganda", "a", `,"optionCount":4`, false, 409},
+		{"PG out of range", "pilihan_ganda", "E", `,"optionCount":4`, false, 409},
+		{"PG multiple", "pilihan_ganda", "A,C", `,"optionCount":4`, false, 409},
+		{"MCMA valid independent score", "pilihan_ganda_kompleks_mcma", "A,E", `,"optionCount":5`, false, 200},
+		{"MCMA duplicate", "pilihan_ganda_kompleks_mcma", "A,A", `,"optionCount":5`, false, 409},
+		{"MCMA out of range", "pilihan_ganda_kompleks_mcma", "A,F", `,"optionCount":5`, false, 409},
+		{"BS valid independent score", "pilihan_ganda_kompleks_bs", "SBSBS", `,"optionCount":5`, false, 200},
+		{"BS wrong length", "pilihan_ganda_kompleks_bs", "SBSB", `,"optionCount":5`, false, 409},
+		{"BS separators", "pilihan_ganda_kompleks_bs", "B,S,B", `,"optionCount":3`, false, 409},
+		{"zero", "pilihan_ganda", "A", `,"optionCount":0`, false, 409},
+		{"negative", "pilihan_ganda", "A", `,"optionCount":-1`, false, 409},
+		{"over limit", "pilihan_ganda", "A", `,"optionCount":101`, false, 409},
+		{"fraction", "pilihan_ganda", "A", `,"optionCount":2.5`, false, 422},
+		{"essay no options", "essay", "Rubrik", "", false, 200},
+		{"legacy PG untouched", "pilihan_ganda", "legacy-key", "", true, 200},
+		{"legacy MCMA untouched", "pilihan_ganda_kompleks_mcma", "legacy-key", "", true, 200},
+		{"legacy BS untouched", "pilihan_ganda_kompleks_bs", "legacy-key", "", true, 200},
+		{"legacy opting in validated", "pilihan_ganda", "E", `,"optionCount":4`, true, 409},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &catalogMetadataStore{}
+			if tc.existing {
+				st.items = []domain.Item{{ID: "OPT", SubjectCode: "MAT", QuestionType: domain.QuestionType(tc.kind), MaxScore: 1, KJ: "old", UsageStatus: domain.ItemAvailable}}
+			}
+			h := &Handler{service: service.New(st, nil, "")}
+			app := fiber.New()
+			app.Post("/items", h.saveItems)
+			app.Get("/items/:id", h.itemDetail)
+			body := `{"items":[{"id":"OPT","subjectCode":"MAT","subjectName":"Matematika","questionType":"` + tc.kind + `","maxScore":1,"kj":"` + tc.key + `"` + tc.count + `}]}`
+			req := httptest.NewRequest("POST", "/items", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			res, err := app.Test(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			if res.StatusCode != tc.status {
+				t.Fatalf("status %d, want %d", res.StatusCode, tc.status)
+			}
+			if tc.status == 200 {
+				res, _ := app.Test(httptest.NewRequest("GET", "/items/OPT", nil))
+				defer res.Body.Close()
+				var payload struct {
+					Data map[string]any `json:"data"`
+				}
+				json.NewDecoder(res.Body).Decode(&payload)
+				if tc.count != "" && payload.Data["optionCount"] == nil {
+					t.Fatal("optionCount lost on round trip")
+				}
+				if tc.count == "" && payload.Data["optionCount"] != nil {
+					t.Fatal("legacy/essay acquired fallback optionCount")
 				}
 			}
 		})

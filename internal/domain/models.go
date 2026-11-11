@@ -127,6 +127,7 @@ type Item struct {
 	SubjectName     string             `json:"subjectName" bson:"subjectName"`
 	QuestionType    QuestionType       `json:"questionType" bson:"questionType"`
 	MaxScore        int                `json:"maxScore" bson:"maxScore"`
+	OptionCount     *int               `json:"optionCount,omitempty" bson:"optionCount,omitempty"`
 	KJ              string             `json:"-" bson:"kj,omitempty"`
 	Measure         *float64           `json:"-" bson:"measure,omitempty"`
 	MeasureCategory string             `json:"-" bson:"measureCategory,omitempty"`
