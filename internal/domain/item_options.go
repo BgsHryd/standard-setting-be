@@ -36,6 +36,19 @@ func ValidateItemOptions(kind QuestionType, count *int, key string, required boo
 		}
 		return nil
 	}
+	if kind == QuestionTypeComplexMCMA {
+		seen := map[rune]bool{}
+		if key == "" {
+			return errors.New("KJ MCMA wajib berisi nomor opsi tanpa pemisah, misalnya 135")
+		}
+		for _, digit := range key {
+			if digit < '1' || digit > '9' || seen[digit] || int(digit-'0') > *count {
+				return errors.New("KJ MCMA harus berisi nomor opsi unik 1–9 tanpa pemisah dan sesuai jumlah opsi, misalnya 135")
+			}
+			seen[digit] = true
+		}
+		return nil
+	}
 	labels := strings.Split(key, ",")
 	if kind == QuestionTypePG && len(labels) != 1 {
 		return errors.New("KJ Pilihan Ganda harus satu label opsi")
@@ -43,7 +56,7 @@ func ValidateItemOptions(kind QuestionType, count *int, key string, required boo
 	seen := map[string]bool{}
 	for _, label := range labels {
 		if !optionLabelPattern.MatchString(label) || seen[label] {
-			return errors.New("KJ harus berisi label opsi unik dalam huruf besar; MCMA dipisahkan koma tanpa spasi")
+			return errors.New("KJ Pilihan Ganda harus berisi satu label opsi dalam huruf besar")
 		}
 		index := 0
 		for _, letter := range label {

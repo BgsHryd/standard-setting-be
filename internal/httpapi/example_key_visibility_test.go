@@ -15,7 +15,7 @@ func TestExampleKeyIndependentOfKJVisibilityAndScopedToEnabledTypes(t *testing.T
 				Subject:      domain.ProjectSubject{ShowKJ: show},
 				ShowExamples: map[domain.QuestionType]bool{domain.QuestionTypeComplexMCMA: enabled, domain.QuestionTypeComplexBS: enabled, domain.QuestionTypePG: true},
 				Items: []domain.Item{
-					{ID: "mcma", QuestionType: domain.QuestionTypeComplexMCMA, MaxScore: 3, OptionCount: &count, KJ: "A,C,E"},
+					{ID: "mcma", QuestionType: domain.QuestionTypeComplexMCMA, MaxScore: 3, OptionCount: &count, KJ: "135"},
 					{ID: "bs", QuestionType: domain.QuestionTypeComplexBS, MaxScore: 3, OptionCount: &count, KJ: "SBSBS"},
 					{ID: "pg", QuestionType: domain.QuestionTypePG, KJ: "B"},
 					{ID: "essay", QuestionType: domain.QuestionTypeEssay, KJ: "rubrik"},

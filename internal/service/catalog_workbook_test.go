@@ -306,11 +306,11 @@ func TestCatalogWorkbookRequiresExplicitOptionCount(t *testing.T) {
 	}{
 		{"missing PG", "Pilihan Ganda", "A", "", false},
 		{"missing BS", "Pilihan Ganda Kompleks BS", "BSB", "", false},
-		{"missing MCMA", "Pilihan Ganda Kompleks MCMA", "A,C", "", false},
+		{"missing MCMA", "Pilihan Ganda Kompleks MCMA", "13", "", false},
 		{"valid PG", "Pilihan Ganda", "D", "4", true},
 		{"valid BS", "Pilihan Ganda Kompleks BS", "SBSBS", "5", true},
-		{"valid MCMA", "Pilihan Ganda Kompleks MCMA", "A,E", "5", true},
-		{"invalid key", "Pilihan Ganda Kompleks MCMA", "A,F", "5", false},
+		{"valid MCMA", "Pilihan Ganda Kompleks MCMA", "15", "5", true},
+		{"invalid key", "Pilihan Ganda Kompleks MCMA", "16", "5", false},
 		{"invalid count", "Pilihan Ganda", "A", "2.5", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -184,7 +184,7 @@ func TestCatalogOptionCountRequiredAndValidatesKeys(t *testing.T) {
 		status                 int
 	}{
 		{"new PG missing", "pilihan_ganda", "A", "", false, 409},
-		{"new MCMA missing", "pilihan_ganda_kompleks_mcma", "A,C", "", false, 409},
+		{"new MCMA missing", "pilihan_ganda_kompleks_mcma", "13", "", false, 409},
 		{"new BS missing", "pilihan_ganda_kompleks_bs", "BSB", "", false, 409},
 		{"PG valid", "pilihan_ganda", "D", `,"optionCount":4`, false, 200},
 		{"PG extended label", "pilihan_ganda", "CV", `,"optionCount":100`, false, 200},
@@ -192,9 +192,10 @@ func TestCatalogOptionCountRequiredAndValidatesKeys(t *testing.T) {
 		{"PG lowercase", "pilihan_ganda", "a", `,"optionCount":4`, false, 409},
 		{"PG out of range", "pilihan_ganda", "E", `,"optionCount":4`, false, 409},
 		{"PG multiple", "pilihan_ganda", "A,C", `,"optionCount":4`, false, 409},
-		{"MCMA valid independent score", "pilihan_ganda_kompleks_mcma", "A,E", `,"optionCount":5`, false, 200},
-		{"MCMA duplicate", "pilihan_ganda_kompleks_mcma", "A,A", `,"optionCount":5`, false, 409},
-		{"MCMA out of range", "pilihan_ganda_kompleks_mcma", "A,F", `,"optionCount":5`, false, 409},
+		{"MCMA valid independent score", "pilihan_ganda_kompleks_mcma", "15", `,"optionCount":5`, false, 200},
+		{"MCMA old letters", "pilihan_ganda_kompleks_mcma", "A,C,E", `,"optionCount":5`, false, 409},
+		{"MCMA duplicate", "pilihan_ganda_kompleks_mcma", "11", `,"optionCount":5`, false, 409},
+		{"MCMA out of range", "pilihan_ganda_kompleks_mcma", "16", `,"optionCount":5`, false, 409},
 		{"BS valid independent score", "pilihan_ganda_kompleks_bs", "SBSBS", `,"optionCount":5`, false, 200},
 		{"BS wrong length", "pilihan_ganda_kompleks_bs", "SBSB", `,"optionCount":5`, false, 409},
 		{"BS separators", "pilihan_ganda_kompleks_bs", "B,S,B", `,"optionCount":3`, false, 409},

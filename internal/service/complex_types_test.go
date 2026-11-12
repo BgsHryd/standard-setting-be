@@ -47,7 +47,7 @@ func TestCatalogWorkbookImportsBothComplexSubtypes(t *testing.T) {
 	} {
 		t.Run(tc.label, func(t *testing.T) {
 			st := &catalogImportMemory{subjects: []domain.Subject{{Code: "MAT", Name: "Matematika"}}, items: map[string]domain.Item{}}
-			key := "A,C"
+			key := "13"
 			if tc.kind == domain.QuestionTypeComplexBS {
 				key = "BSB"
 			}
@@ -86,7 +86,7 @@ func TestComplexSubtypeCatalogSetupKeepsSameMaxScoreAndRubric(t *testing.T) {
 	for _, kind := range []domain.QuestionType{"pilihan_ganda_kompleks_mcma", "pilihan_ganda_kompleks_bs"} {
 		st := &complexCatalogMemory{catalogImportMemory{subjects: []domain.Subject{{Code: "MAT", Name: "Matematika"}}, items: map[string]domain.Item{}}}
 		s := New(st, nil, "")
-		item := domain.Item{ID: "TEST", SubjectCode: "MAT", SubjectName: "Matematika", QuestionType: kind, MaxScore: 3, OptionCount: intValue(3), KJ: "A,C", Rubric: []string{"0", "1", "2", "3"}}
+		item := domain.Item{ID: "TEST", SubjectCode: "MAT", SubjectName: "Matematika", QuestionType: kind, MaxScore: 3, OptionCount: intValue(3), KJ: "13", Rubric: []string{"0", "1", "2", "3"}}
 		if kind == domain.QuestionTypeComplexBS {
 			item.KJ = "BSB"
 		}

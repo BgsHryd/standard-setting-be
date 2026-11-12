@@ -112,6 +112,7 @@ func TestAllocatedCatalogEditsPreserveProjectAndExistingAnswers(t *testing.T) {
 	}
 	saved.QuestionType, saved.MaxScore = domain.QuestionTypeComplexMCMA, 3
 	saved.OptionCount = intValue(4)
+	saved.KJ = "2"
 	if err := s.UpsertItems(ctx, []domain.Item{saved}); err != nil {
 		t.Fatal("type/score edit rejected", err)
 	}

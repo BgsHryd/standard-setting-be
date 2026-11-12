@@ -83,7 +83,7 @@ func (s *Service) CatalogWorkbookTemplate(ctx context.Context, kind string) ([]b
 			"bentuk_soal: Pilihan Ganda, Pilihan Ganda Kompleks MCMA, Pilihan Ganda Kompleks BS, Essay; atau pilihan_ganda, pilihan_ganda_kompleks_mcma, pilihan_ganda_kompleks_bs, essay. PG Kompleks/pilihan_ganda_kompleks tetap diterima untuk kompatibilitas data lama.",
 			"skor_maksimum: bilangan bulat 1–100. Pilihan Ganda wajib 1. rubrik boleh kosong, maksimal 8000 karakter; satu catatan per baris dalam sel.",
 			"jumlah_opsi: wajib bilangan bulat 1–100 untuk Pilihan Ganda, MCMA, dan BS; independen dari skor_maksimum. Essay dan PG Kompleks lama tidak memerlukannya.",
-			"kj: wajib maksimal 8000 karakter. PG: satu label (A); MCMA: label unik dipisah koma tanpa spasi (A,C,E); BS: B/S tanpa pemisah sebanyak jumlah_opsi (SBSBS). Label harus sesuai jumlah_opsi.",
+			"kj: wajib maksimal 8000 karakter. PG: satu label (A); MCMA: nomor opsi unik tanpa pemisah (135 berarti opsi 1, 3, dan 5; setiap digit adalah satu nomor opsi 1–9); BS: B/S tanpa pemisah sebanyak jumlah_opsi (SBSBS). Label harus sesuai jumlah_opsi.",
 			"measure: opsional, angka bulat/desimal positif atau negatif; contoh 0, -2, 1.25, -1,25. Kosong berarti belum ada nilai; nol tetap disimpan. Jangan gunakan pemisah ribuan.",
 			"kategori_measure: Sukar, Sedang, atau Mudah; dipilih manual, tidak ditentukan oleh angka measure. Boleh kosong untuk data yang belum dikategorikan.",
 			"Butir baru berstatus Tersedia. Alokasi ke proyek dilakukan melalui konfigurasi proyek.",
