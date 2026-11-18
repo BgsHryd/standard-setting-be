@@ -19,7 +19,10 @@ func validateItemAnswer(item domain.Item, answer domain.Answer) error {
 	}
 	if answer.QuestionType != domain.QuestionTypePG {
 		if answer.Value != nil {
-			return errors.New("jawaban distribusi tidak menerima nilai tunggal")
+			if item.MaxScore < 1 || *answer.Value > item.MaxScore {
+				return errors.New("nilai PGK melampaui skor maksimum butir")
+			}
+			return nil
 		}
 		if item.MaxScore < 1 || len(answer.Distribution) != item.MaxScore+1 {
 			return errors.New("jumlah kategori distribusi tidak sesuai skor maksimum butir")

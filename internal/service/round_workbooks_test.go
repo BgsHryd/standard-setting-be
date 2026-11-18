@@ -175,7 +175,7 @@ func TestRoundWorkbooksSeparateSubjectsAndUseFrozenResponses(t *testing.T) {
 	if workbookCell(t, frozen, "A2") != "001" || workbookCell(t, frozen, "B1") != "Panelis 1 - Nama saat dikunci" || workbookCell(t, frozen, "B2") != "50" || workbookCell(t, frozen, "C3") != "100" {
 		t.Fatal("snapshot response/name/maximum changed with live data")
 	}
-	if !strings.Contains(workbookCell(t, frozen, "D2"), "Prioritaskan diskusi") {
+	if !strings.Contains(workbookCell(t, frozen, "D2"), "Panel cenderung sudah sepakat") {
 		t.Fatal("missing frozen guidance")
 	}
 	live := files["01-MAT/putaran-2.xlsx"]

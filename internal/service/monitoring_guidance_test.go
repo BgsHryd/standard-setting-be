@@ -17,6 +17,14 @@ type guidancePayload struct {
 	State  string   `json:"state"`
 }
 
+func TestEssayGuidancePreservesLegacyInclusiveThreshold(t *testing.T) {
+	round := domain.Round{Status: "finalized", FinalSnapshot: &domain.RoundSnapshot{ItemStatistics: map[string]domain.ItemResult{"e": {Minimum: 40, Maximum: 60, PanelistCount: 3}}}}
+	rows := monitoringItemGuidance(round, []domain.Item{{ID: "e", QuestionType: domain.QuestionTypeEssay, MaxScore: 4}})
+	if len(rows) != 1 || rows[0].State != "priority" {
+		t.Fatalf("essay threshold changed: %+v", rows)
+	}
+}
+
 func monitoringGuidancePayload(t *testing.T, result Monitoring) []guidancePayload {
 	t.Helper()
 	data, err := json.Marshal(result)
@@ -43,7 +51,7 @@ func TestMonitoringGuidanceClassifiesUnroundedFinalRanges(t *testing.T) {
 	}{
 		{"zero", 0, "agreement"},
 		{"below threshold", 19.999, "agreement"},
-		{"at threshold", 20, "priority"},
+		{"at threshold", 20, "agreement"},
 		{"above threshold", 20.001, "priority"},
 		{"full scale", 100, "priority"},
 	} {
@@ -133,7 +141,7 @@ func TestMonitoringGuidanceUsesOrderedFrozenItemStatisticsWithoutExposingSnapsho
 		t.Fatalf("guidance must match ordered project items: %+v", rows)
 	}
 	// Live submission is 99 and frozen submission is 65: neither can replace the per-item 30..50 statistics.
-	if rows[0].Range == nil || *rows[0].Range != 0 || rows[0].State != "agreement" || rows[1].Range == nil || *rows[1].Range != 20 || rows[1].State != "priority" || rows[2].Range != nil || rows[2].State != "unavailable" {
+	if rows[0].Range == nil || *rows[0].Range != 0 || rows[0].State != "agreement" || rows[1].Range == nil || *rows[1].Range != 20 || rows[1].State != "agreement" || rows[2].Range != nil || rows[2].State != "unavailable" {
 		t.Fatalf("guidance must use frozen per-item statistics: %+v", rows)
 	}
 	data, err := json.Marshal(result)
@@ -168,5 +176,22 @@ func TestMonitoringGuidanceFutureRoundReturnsEmptyArray(t *testing.T) {
 	}
 	if rows := monitoringGuidancePayload(t, result); len(rows) != 0 {
 		t.Fatalf("future guidance must match its empty items: %+v", rows)
+	}
+}
+
+func TestPGKGuidanceUsesStrictOriginalScoreRange(t *testing.T) {
+	for _, kind := range []domain.QuestionType{domain.QuestionTypeComplex, domain.QuestionTypeComplexMCMA, domain.QuestionTypeComplexBS} {
+		for _, tc := range []struct {
+			raw  float64
+			n    int
+			want string
+		}{{.999, 2, "agreement"}, {1, 2, "agreement"}, {1.001, 2, "priority"}, {3, 1, "agreement"}} {
+			item := domain.Item{ID: "i", QuestionType: kind, MaxScore: 3}
+			round := domain.Round{Status: "finalized", FinalSnapshot: guidanceSnapshot(domain.ItemResult{Minimum: 0, Maximum: 100 * tc.raw / 3, PanelistCount: tc.n})}
+			got := monitoringItemGuidance(round, []domain.Item{item})
+			if got[0].State != tc.want {
+				t.Fatalf("%s %v: %+v", kind, tc.raw, got)
+			}
+		}
 	}
 }

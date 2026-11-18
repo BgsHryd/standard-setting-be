@@ -191,6 +191,9 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 				continue
 			}
 			maximum := len(row.Answer.Distribution) - 1
+			if row.Answer.Value != nil {
+				maximum = row.Answer.MaxScore
+			}
 			if row.Answer.QuestionType == domain.QuestionTypePG {
 				maximum = 1
 			}

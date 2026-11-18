@@ -28,6 +28,9 @@ func DefaultAnswerInstructions() map[QuestionType]AnswerInstruction {
 	for kind := range DefaultQuestionInstructions() {
 		result[kind] = AnswerInstruction{Title: "Distribusi 100 kandidat berdasarkan skor", Description: "Jumlah seluruh distribusi harus tepat 100."}
 	}
+	for _, kind := range []QuestionType{QuestionTypeComplex, QuestionTypeComplexMCMA, QuestionTypeComplexBS} {
+		result[kind] = AnswerInstruction{Title: "Skor kandidat batas lulus", Description: "Masukkan satu angka bulat dari 0 sampai skor maksimum butir."}
+	}
 	result[QuestionTypePG] = AnswerInstruction{Title: "Nilai kelayakan kandidat", Description: "Masukkan angka bulat 0–100."}
 	return result
 }
@@ -61,10 +64,10 @@ func DefaultQuestionExamples() map[QuestionType]bool {
 func DefaultQuestionInstructions() map[QuestionType]string {
 	return map[QuestionType]string{
 		QuestionTypePG:          `<p>Kunci berisi <strong>satu opsi benar</strong>. Bayangkan 100 kandidat borderline mengerjakan butir ini: berapa orang yang memilih kunci, dan berapa yang terkecoh pengecoh?</p><p>Tulis <strong>banyak kandidat yang menjawab benar</strong> (0–100).</p>`,
-		QuestionTypeComplexMCMA: `<p>Kunci dapat berisi <strong>lebih dari satu opsi benar</strong>. Bayangkan 100 kandidat batas lulus mengerjakan butir ini.</p><p>Bagikan kandidat ke setiap skor sesuai rubrik. Jumlah seluruh distribusi harus <strong>tepat 100</strong>.</p>`,
-		QuestionTypeComplexBS:   `<p>Bayangkan 100 kandidat batas lulus menilai pernyataan <strong>Benar–Salah</strong> pada butir ini.</p><p>Bagikan kandidat ke setiap skor sesuai rubrik. Jumlah seluruh distribusi harus <strong>tepat 100</strong>.</p>`,
+		QuestionTypeComplexMCMA: `<p>Kunci dapat berisi <strong>lebih dari satu opsi benar</strong>. Bayangkan 100 kandidat batas lulus mengerjakan butir ini.</p><p>Masukkan <strong>satu skor bulat dari 0 sampai skor maksimum butir</strong> sesuai rubrik.</p>`,
+		QuestionTypeComplexBS:   `<p>Bayangkan 100 kandidat batas lulus menilai pernyataan <strong>Benar–Salah</strong> pada butir ini.</p><p>Masukkan <strong>satu skor bulat dari 0 sampai skor maksimum butir</strong> sesuai rubrik.</p>`,
 		QuestionTypeEssay:       `<p>Bayangkan jawaban 100 kandidat batas lulus, lalu gunakan <strong>rubrik penskoran</strong> untuk memperkirakan distribusi skornya.</p><p>Jumlah kandidat pada seluruh skor harus <strong>tepat 100</strong>.</p>`,
-		QuestionTypeComplex:     `<p>Bayangkan 100 kandidat batas lulus mengerjakan butir ini. Bagikan kandidat ke setiap skor sesuai rubrik.</p><p>Jumlah seluruh distribusi harus <strong>tepat 100</strong>.</p>`,
+		QuestionTypeComplex:     `<p>Bayangkan kandidat batas lulus mengerjakan butir ini.</p><p>Masukkan <strong>satu skor bulat dari 0 sampai skor maksimum butir</strong> sesuai rubrik.</p>`,
 	}
 }
 

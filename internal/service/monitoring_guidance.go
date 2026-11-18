@@ -27,7 +27,16 @@ func monitoringItemGuidance(round domain.Round, items []domain.Item) []Monitorin
 					value := stats.Maximum - stats.Minimum
 					row.Range = &value
 					row.State = "agreement"
-					if value >= 20 {
+					priority := value > 20
+					switch item.QuestionType {
+					case domain.QuestionTypeEssay:
+						priority = value >= 20 // Preserve the legacy essay guidance.
+					case domain.QuestionTypeComplex, domain.QuestionTypeComplexMCMA, domain.QuestionTypeComplexBS:
+						// Frozen maximum converts percentage range back to the original scale.
+						// Tolerance suppresses floating point noise at the exact one-score boundary.
+						priority = item.MaxScore > 0 && value*float64(item.MaxScore)/100 > 1+1e-12
+					}
+					if stats.PanelistCount >= 2 && priority {
 						row.State = "priority"
 					}
 				}

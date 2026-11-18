@@ -122,6 +122,7 @@ func New(config Config) *App {
 	panelist := protected.Group("/panelist", handler.requireRoles(domain.RolePanelist))
 	panelist.Get("/form", handler.panelistForm)
 	panelist.Put("/submissions/:itemId", handler.saveSubmission)
+	handler.registerWrightMapRoutes(protected)
 	handler.registerCoreRoutes(protected, admin, adminRole, pic, panelist)
 	handler.registerWorkflowRoutes(pic, panelist)
 	handler.registerPICItemResultRoutes(pic)

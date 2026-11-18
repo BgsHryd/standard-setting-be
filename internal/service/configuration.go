@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"standard-setting/backend/internal/domain"
@@ -48,7 +49,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		}
 		p.Name = strings.TrimSpace(input.Name)
 		p.UpdatedAt = now
-		p.WizardStep = max(1, min(5, p.WizardStep))
+		p.WizardStep = max(1, min(6, p.WizardStep))
 		p.ItemsEditable = false
 		var old domain.Project
 		users := []domain.User{}
@@ -162,6 +163,9 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		allReady := len(p.Subjects) > 0
 		for i := range p.Subjects {
 			sub := &p.Subjects[i]
+			if sub.SEM != nil && (math.IsNaN(*sub.SEM) || math.IsInf(*sub.SEM, 0) || *sub.SEM < 0) {
+				return errors.New("SEM harus angka finite non-negatif")
+			}
 			cat, exists := byCode[sub.Code]
 			if !exists || seenSubjects[sub.Code] {
 				return errors.New("mata pelajaran tidak ditemukan atau ganda")
