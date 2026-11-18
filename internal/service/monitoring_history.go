@@ -45,8 +45,10 @@ func (s *Service) MonitoringAtRound(ctx context.Context, projectID, subjectCode 
 	}
 	return Monitoring{
 		Project: p, Subject: subject, History: history,
-		Round:     domain.Round{ProjectID: p.ID, SubjectCode: subjectCode, Number: number, Status: "future"},
-		Panelists: []MonitoringPanelist{}, Items: []domain.Item{}, Excluded: []MonitoringExclusion{}, Notes: []MonitoringNote{},
+		AngoffReview:         domain.ComputeAngoffReview(nil, nil, nil),
+		StandardSettingError: domain.ComputeStandardSettingError(subject.SEM, nil, false, false),
+		Round:                domain.Round{ProjectID: p.ID, SubjectCode: subjectCode, Number: number, Status: "future"},
+		Panelists:            []MonitoringPanelist{}, Items: []domain.Item{}, Excluded: []MonitoringExclusion{}, Notes: []MonitoringNote{},
 		FinalNBKChoices: []FinalNBKChoice{}, TotalItems: len(subject.ItemIDs),
 		ItemGuidance: []MonitoringItemGuidance{},
 	}, nil

@@ -39,22 +39,24 @@ type MonitoringNote struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 type Monitoring struct {
-	ItemRounds      []MonitoringItemRound    `json:"itemRounds"`
-	FinalNBKChoices []FinalNBKChoice         `json:"finalNBKChoices"`
-	Project         domain.Project           `json:"project"`
-	Subject         domain.ProjectSubject    `json:"subject"`
-	Round           domain.Round             `json:"round"`
-	History         []domain.Round           `json:"history"`
-	Panelists       []MonitoringPanelist     `json:"panelists"`
-	Items           []domain.Item            `json:"items"`
-	ItemGuidance    []MonitoringItemGuidance `json:"itemGuidance"`
-	Statistics      *domain.ItemResult       `json:"statistics"`
-	TotalDone       int                      `json:"totalDone"`
-	TotalItems      int                      `json:"totalItems"`
-	CanFinalize     bool                     `json:"canFinalize"`
-	CanRollback     bool                     `json:"canRollback"`
-	Excluded        []MonitoringExclusion    `json:"excluded"`
-	Notes           []MonitoringNote         `json:"notes"`
+	AngoffReview         domain.AngoffReview         `json:"angoffReview"`
+	StandardSettingError domain.StandardSettingError `json:"standardSettingError"`
+	ItemRounds           []MonitoringItemRound       `json:"itemRounds"`
+	FinalNBKChoices      []FinalNBKChoice            `json:"finalNBKChoices"`
+	Project              domain.Project              `json:"project"`
+	Subject              domain.ProjectSubject       `json:"subject"`
+	Round                domain.Round                `json:"round"`
+	History              []domain.Round              `json:"history"`
+	Panelists            []MonitoringPanelist        `json:"panelists"`
+	Items                []domain.Item               `json:"items"`
+	ItemGuidance         []MonitoringItemGuidance    `json:"itemGuidance"`
+	Statistics           *domain.ItemResult          `json:"statistics"`
+	TotalDone            int                         `json:"totalDone"`
+	TotalItems           int                         `json:"totalItems"`
+	CanFinalize          bool                        `json:"canFinalize"`
+	CanRollback          bool                        `json:"canRollback"`
+	Excluded             []MonitoringExclusion       `json:"excluded"`
+	Notes                []MonitoringNote            `json:"notes"`
 }
 
 func (s *Service) displayRound(ctx context.Context, p domain.Project, subjectCode string, history []domain.Round) (domain.Round, error) {
@@ -120,11 +122,24 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	if snapshot != nil {
 		subject.CandidateVersion = snapshot.CandidateVersion
 		subject.CandidateDefinition = snapshot.CandidateDefinition
+		// The frozen cohort remains authoritative even after accounts are removed
+		// or their active assignment changes.
 		included := []domain.User{}
-		for _, user := range panelists {
-			if contains(snapshot.PanelistIDs, user.ID) {
-				included = append(included, user)
+		for _, id := range snapshot.PanelistIDs {
+			user := domain.User{ID: id}
+			for _, candidate := range users {
+				if candidate.ID == id {
+					user = candidate
+					break
+				}
 			}
+			for _, person := range snapshot.Roster {
+				if person.PanelistID == id {
+					user.Name = person.PanelistName
+					break
+				}
+			}
+			included = append(included, user)
 		}
 		panelists = included
 	}
@@ -200,7 +215,10 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 		}
 	}
 	scores := []float64{}
+	reviewValues := map[string]map[string]float64{}
+	reviewIDs := []string{}
 	for _, user := range panelists {
+		reviewIDs = append(reviewIDs, user.ID)
 		responses := byUser[user.ID]
 		for _, note := range discussionNotes {
 			if note.UserID == user.ID && note.Text != "" && contains(subject.ItemIDs, note.ItemID) {
@@ -250,6 +268,7 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 			for _, item := range ordered {
 				values[item.ID] = responseValue(responses[item.ID].Answer, item.MaxScore)
 			}
+			reviewValues[user.ID] = values
 			score, err := testScoreForItems(ordered, values, p.ScoringMethod)
 			if err != nil {
 				return Monitoring{}, err
@@ -266,7 +285,8 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 		result.TotalDone += panelist.Done
 		result.Panelists = append(result.Panelists, panelist)
 	}
-	ready := len(scores) == len(panelists) && len(scores) > 0
+	result.AngoffReview = domain.ComputeAngoffReview(ordered, reviewIDs, reviewValues)
+	ready := len(scores) == len(panelists) && len(scores) > 0 && result.AngoffReview.Ready
 	if ready {
 		stats := domain.ComputeStatistics(scores, projectRoundingPolicy(p))
 		stats.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
@@ -278,6 +298,8 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 		stats := round.FinalSnapshot.Statistics
 		result.Statistics = &stats
 	}
+	errorReady := ready && result.Statistics != nil && result.Statistics.PanelistCount == result.AngoffReview.CompletePanelistCount
+	result.StandardSettingError = domain.ComputeStandardSettingError(subject.SEM, result.Statistics, errorReady, snapshot != nil)
 	result.ItemRounds, err = s.monitoringItemRounds(ctx, p, subject, history, ordered, users)
 	if err != nil {
 		return Monitoring{}, err
@@ -343,6 +365,15 @@ func (s *Service) PreviewPanelist(ctx context.Context, projectID, subjectCode st
 
 func responseValue(answer domain.Answer, maxScore int) float64 {
 	if answer.Value != nil {
+		if answer.QuestionType != domain.QuestionTypePG {
+			if answer.MaxScore > 0 {
+				maxScore = answer.MaxScore
+			}
+			if maxScore < 1 {
+				return 0
+			}
+			return 100 * float64(*answer.Value) / float64(maxScore)
+		}
 		return float64(*answer.Value)
 	}
 	if maxScore < 1 {
@@ -378,7 +409,7 @@ func (s *Service) MonitoringAll(ctx context.Context, id string, round int) (AllM
 				if historyErr != nil {
 					return historyErr
 				}
-				m = Monitoring{Project: p, Subject: subject, Round: domain.Round{Number: round, Status: "unavailable"}, History: history, Panelists: []MonitoringPanelist{}, Items: []domain.Item{}, ItemGuidance: []MonitoringItemGuidance{}}
+				m = Monitoring{AngoffReview: domain.ComputeAngoffReview(nil, nil, nil), StandardSettingError: domain.ComputeStandardSettingError(subject.SEM, nil, false, false), Project: p, Subject: subject, Round: domain.Round{Number: round, Status: "unavailable"}, History: history, Panelists: []MonitoringPanelist{}, Items: []domain.Item{}, ItemGuidance: []MonitoringItemGuidance{}}
 				err = nil
 			}
 			if err != nil {

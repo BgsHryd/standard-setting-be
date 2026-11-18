@@ -101,6 +101,7 @@ type CandidateDefinitionRevision struct {
 }
 
 type ProjectSubject struct {
+	SEM                 *float64                      `json:"sem" bson:"sem"`
 	ShowKJ              bool                          `json:"showKJ" bson:"showKJ"`
 	ShowMeasure         bool                          `json:"showMeasure" bson:"showMeasure"`
 	PracticeStatus      string                        `json:"practiceStatus" bson:"practiceStatus"`
@@ -182,6 +183,7 @@ type Round struct {
 }
 
 type Answer struct {
+	MaxScore     int          `json:"maxScore,omitempty" bson:"maxScore,omitempty"`
 	QuestionType QuestionType `json:"questionType" bson:"questionType"`
 	Value        *int         `json:"value,omitempty" bson:"value,omitempty"`
 	Distribution []int        `json:"distribution,omitempty" bson:"distribution,omitempty"`

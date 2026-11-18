@@ -18,6 +18,19 @@ Panduan pengguna tersedia di [docs FE](../../frontend-ss/docs/PANDUAN-FE.md), de
 
 ## Fitur dan operasi terbaru
 
+- [Detail hasil butir per panelis untuk PIC — 29 Oktober](PIC-ITEM-RESULTS-2026-10-29.md)
+
+- [Perbandingan distribusi pada overview panelis — 29 Oktober](OVERVIEW-DISTRIBUTION-2026-10-29.md)
+
+- [Hasil dan diskusi antarputaran panelis — 29 Oktober](BETWEEN-ROUND-RESULTS-2026-10-29.md)
+
+- [Konfigurasi KJ dan Measure panelis — 28 Oktober](PANELIST-DISPLAY-2026-10-28.md)
+- [Password akun melalui Excel — 28 Oktober](EXCEL-ACCOUNT-PASSWORD-2026-10-28.md)
+- [Latihan, penyelesaian putaran dan NBK final — 27 Oktober](WORKFLOW-2026-10-27.md)
+- [Impor proyek Excel](PROJECT-EXCEL-2026-10-26.md)
+- [Pengelolaan akun peserta](ACCOUNT-MANAGEMENT-2026-10-26.md)
+- [Telemetri koneksi dan durasi](TELEMETRY-2026-10-26.md)
+
 - [Kontak, kandidat, revisi, snapshot dan audit](FEATURES-2026-10-19.md)
 - [Laporan, dampak dan evaluasi](../../docs/features/reporting-impact-evaluation.md)
 - [Instalasi, HTTPS, backup dan restore drill](../../deployment/OPERATIONS.md)

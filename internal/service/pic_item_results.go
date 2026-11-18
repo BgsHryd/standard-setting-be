@@ -19,15 +19,17 @@ type PICResultItem struct {
 	Values       map[string]float64  `json:"values"`
 }
 type PICItemResults struct {
-	ScoringMethod string              `json:"scoringMethod"`
-	ProjectCode   string              `json:"projectCode"`
-	SubjectCode   string              `json:"subjectCode"`
-	SubjectName   string              `json:"subjectName"`
-	Round         domain.Round        `json:"round"`
-	Rounds        []domain.Round      `json:"rounds"`
-	Panelists     []PICResultPanelist `json:"panelists"`
-	Items         []PICResultItem     `json:"items"`
-	GeneratedAt   time.Time           `json:"generatedAt"`
+	AngoffReview         domain.AngoffReview         `json:"angoffReview"`
+	StandardSettingError domain.StandardSettingError `json:"standardSettingError"`
+	ScoringMethod        string                      `json:"scoringMethod"`
+	ProjectCode          string                      `json:"projectCode"`
+	SubjectCode          string                      `json:"subjectCode"`
+	SubjectName          string                      `json:"subjectName"`
+	Round                domain.Round                `json:"round"`
+	Rounds               []domain.Round              `json:"rounds"`
+	Panelists            []PICResultPanelist         `json:"panelists"`
+	Items                []PICResultItem             `json:"items"`
+	GeneratedAt          time.Time                   `json:"generatedAt"`
 }
 
 func (s *Service) PICItemResults(ctx context.Context, id string, number int) (PICItemResults, error) {
@@ -60,6 +62,8 @@ func (s *Service) PICItemResults(ctx context.Context, id string, number int) (PI
 			return err
 		}
 		result = PICItemResults{ProjectCode: project.Code, SubjectCode: subject.Code, SubjectName: subject.Name, Round: publicRound(monitoring.Round), Rounds: []domain.Round{}, Panelists: []PICResultPanelist{}, Items: []PICResultItem{}, GeneratedAt: time.Now().UTC()}
+		result.AngoffReview = monitoring.AngoffReview
+		result.StandardSettingError = monitoring.StandardSettingError
 		result.ScoringMethod = domain.NormalizeScoringMethod(project.ScoringMethod)
 		var snapshot *domain.RoundSnapshot
 		for _, round := range history {

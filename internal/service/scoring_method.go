@@ -45,6 +45,9 @@ func frozenScoringResponses(snap domain.RoundSnapshot) (map[string]domain.Item, 
 			continue
 		}
 		maximum := len(row.Answer.Distribution) - 1
+		if row.Answer.Value != nil {
+			maximum = row.Answer.MaxScore
+		}
 		if row.Answer.QuestionType == domain.QuestionTypePG {
 			maximum = 1
 		}

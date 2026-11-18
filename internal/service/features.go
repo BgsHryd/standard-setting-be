@@ -255,6 +255,10 @@ func (s *Service) SaveSubmissionWithOptions(ctx context.Context, userID, name, p
 		if item.SubjectCode != subjectCode {
 			return errors.New("ID butir tidak tersedia")
 		}
+		answer.MaxScore = 0
+		if answer.Value != nil && answer.QuestionType != domain.QuestionTypePG {
+			answer.MaxScore = item.MaxScore
+		}
 		if err = validateItemAnswer(item, answer); err != nil {
 			return err
 		}
