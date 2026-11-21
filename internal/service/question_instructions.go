@@ -31,7 +31,14 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 	if domain.ValidReviewRangeThreshold(saved.ReviewRangeThreshold) {
 		result.ReviewRangeThreshold = saved.ReviewRangeThreshold
 	}
+	// Prior settings screens saved all fields, including untouched factory copy.
+	// Upgrade only the exact retired essay defaults; custom admin wording wins.
+	oldEssayAnswer := domain.AnswerInstruction{Title: "Distribusi 100 kandidat berdasarkan skor", Description: "Jumlah seluruh distribusi harus tepat 100."}
+	const oldEssayPrompt = `<p>Bayangkan jawaban 100 kandidat batas lulus, lalu gunakan <strong>rubrik penskoran</strong> untuk memperkirakan distribusi skornya.</p><p>Jumlah kandidat pada seluruh skor harus <strong>tepat 100</strong>.</p>`
 	for kind := range result.AnswerInstructions {
+		if kind == domain.QuestionTypeEssay && saved.AnswerInstructions[kind] == oldEssayAnswer {
+			continue
+		}
 		if value := saved.AnswerInstructions[kind]; domain.ValidAnswerInstruction(value) {
 			result.AnswerInstructions[kind] = value
 		}
@@ -40,6 +47,9 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 		result.ShowExamples[kind] = saved.ShowExamples[kind]
 	}
 	for kind := range result.Instructions {
+		if kind == domain.QuestionTypeEssay && saved.Instructions[kind] == oldEssayPrompt {
+			continue
+		}
 		if html, e := domain.SanitizeQuestionInstruction(saved.Instructions[kind]); e == nil {
 			result.Instructions[kind] = html
 		}

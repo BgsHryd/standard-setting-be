@@ -71,13 +71,9 @@ func (s *Service) PICRoundOverview(ctx context.Context, userID string, number in
 		if review == nil || review.RoundNumber != number {
 			return errors.New("hasil putaran yang dipilih tidak tersedia")
 		}
-		items, err := s.store.ListItems(tx, subject.Code, project.ID, false)
+		byID, _, err := frozenScoringResponses(*snap)
 		if err != nil {
 			return err
-		}
-		byID := map[string]domain.Item{}
-		for _, item := range items {
-			byID[item.ID] = item
 		}
 		result.Items = []domain.Item{}
 		for _, id := range subject.ItemIDs {

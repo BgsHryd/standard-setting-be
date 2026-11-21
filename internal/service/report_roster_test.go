@@ -11,7 +11,7 @@ func TestRawReportIncludesUnansweredExcludedAndInactiveRoster(t *testing.T) {
 	for _, inactive := range []bool{false, true} {
 		t.Run(map[bool]string{false: "excluded", true: "inactive"}[inactive], func(t *testing.T) {
 			ctx, s, _, p := fixture(t, true)
-			answers := []domain.Answer{{QuestionType: domain.QuestionTypePG, Value: intValue(60)}, {QuestionType: domain.QuestionTypeComplex, Distribution: []int{0, 0, 0, 100}}, {QuestionType: domain.QuestionTypeEssay, Distribution: []int{0, 0, 100, 0, 0}}}
+			answers := []domain.Answer{{QuestionType: domain.QuestionTypePG, Value: intValue(60)}, {QuestionType: domain.QuestionTypeComplex, Value: intValue(3)}, {QuestionType: domain.QuestionTypeEssay, Value: intValue(2)}}
 			for i, a := range answers {
 				if _, err := s.SaveSubmission(ctx, "p1", "", p.ID, "MAT", 1, p.Subjects[0].ItemIDs[i], a); err != nil {
 					t.Fatal(err)

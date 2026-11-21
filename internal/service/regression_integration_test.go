@@ -120,7 +120,7 @@ func TestAllocatedCatalogEditsPreserveProjectAndExistingAnswers(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].Answer.QuestionType != domain.QuestionTypePG {
 		t.Fatal("catalog edit rewrote a response", rows, err)
 	}
-	if _, err := s.SaveSubmissionWithOptions(ctx, "p1", "A", project.ID, "MAT", 1, item.ID, domain.Answer{QuestionType: domain.QuestionTypeComplexMCMA, Distribution: []int{10, 20, 30, 40}}, SubmissionOptions{RoundRevision: 1, Version: rows[0].Version}); err != nil {
+	if _, err := s.SaveSubmissionWithOptions(ctx, "p1", "A", project.ID, "MAT", 1, item.ID, domain.Answer{QuestionType: domain.QuestionTypeComplexMCMA, Value: intValue(2)}, SubmissionOptions{RoundRevision: 1, Version: rows[0].Version}); err != nil {
 		t.Fatal("updated item can no longer be scored", err)
 	}
 }
@@ -129,8 +129,8 @@ func fillRound(t *testing.T, ctx context.Context, s *Service, p domain.Project, 
 	t.Helper()
 	for i, id := range []string{"p1", "p2"} {
 		answers := []domain.Answer{{QuestionType: domain.QuestionTypePG, Value: intValue(60 + 20*i + delta)},
-			{QuestionType: domain.QuestionTypeComplex, Distribution: []int{0, 0, 0, 100}},
-			{QuestionType: domain.QuestionTypeEssay, Distribution: []int{0, 0, 100, 0, 0}}}
+			{QuestionType: domain.QuestionTypeComplex, Value: intValue(3)},
+			{QuestionType: domain.QuestionTypeEssay, Value: intValue(2)}}
 		for j, answer := range answers {
 			if _, err := s.SaveSubmission(ctx, id, id, p.ID, "MAT", round, p.Subjects[0].ItemIDs[j], answer); err != nil {
 				t.Fatal(err)

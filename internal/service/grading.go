@@ -10,6 +10,18 @@ import (
 	"standard-setting/backend/internal/domain"
 )
 
+// New judgments use one integer. Persisted distributions remain readable in all rounds.
+func preparePanelistAnswer(item domain.Item, answer *domain.Answer) error {
+	if answer.Value == nil {
+		return errors.New("masukkan satu angka bulat untuk butir ini")
+	}
+	answer.MaxScore = 0
+	if item.QuestionType != domain.QuestionTypePG {
+		answer.MaxScore = item.MaxScore
+	}
+	return validateItemAnswer(item, *answer)
+}
+
 func validateItemAnswer(item domain.Item, answer domain.Answer) error {
 	if item.QuestionType != answer.QuestionType {
 		return errors.New("jenis jawaban tidak sesuai butir")
@@ -20,7 +32,7 @@ func validateItemAnswer(item domain.Item, answer domain.Answer) error {
 	if answer.QuestionType != domain.QuestionTypePG {
 		if answer.Value != nil {
 			if item.MaxScore < 1 || *answer.Value > item.MaxScore {
-				return errors.New("nilai PGK melampaui skor maksimum butir")
+				return errors.New("skor harapan melampaui skor maksimum butir")
 			}
 			return nil
 		}

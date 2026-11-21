@@ -107,7 +107,7 @@ func TestPracticeIsSeparateAndPICControlsActualScoring(t *testing.T) {
 		if item.QuestionType != domain.QuestionTypeComplexBS && item.QuestionType != domain.QuestionTypeComplexMCMA {
 			continue
 		}
-		practice, err = s.SavePracticeAnswer(ctx, "p1", item.ID, domain.Answer{QuestionType: item.QuestionType, Distribution: []int{10, 20, 30, 40}}, practice.Session.Version)
+		practice, err = s.SavePracticeAnswer(ctx, "p1", item.ID, domain.Answer{QuestionType: item.QuestionType, Value: intValue(2)}, practice.Session.Version)
 		if err != nil {
 			t.Fatal("split complex example could not be saved", item.ID, err)
 		}
@@ -151,7 +151,7 @@ func TestPracticeIncludesSeparateBSAndMCMANotLegacyComplex(t *testing.T) {
 		}
 		ids[item.ID] = true
 		if item.QuestionType == domain.QuestionTypeComplexBS || item.QuestionType == domain.QuestionTypeComplexMCMA {
-			if item.MaxScore != 3 || validateItemAnswer(item, domain.Answer{QuestionType: item.QuestionType, Distribution: []int{10, 20, 30, 40}}) != nil {
+			if item.MaxScore != 3 || validateItemAnswer(item, domain.Answer{QuestionType: item.QuestionType, Value: intValue(2)}) != nil {
 				t.Fatal("complex example rules changed", item)
 			}
 		}
@@ -216,7 +216,7 @@ func TestWorkflowRejectsStaleReceiptsAndAllowsUntimedPractice(t *testing.T) {
 	if err != nil || practice.ReadOnly || practice.ExpiresAt != nil {
 		t.Fatal("practice must remain writable after ten minutes", practice, err)
 	}
-	if _, err = s.SavePracticeAnswer(ctx, "p1", "practice-essay", domain.Answer{QuestionType: domain.QuestionTypeEssay, Distribution: []int{20, 30, 50}}, practice.Session.Version); err != nil {
+	if _, err = s.SavePracticeAnswer(ctx, "p1", "practice-essay", domain.Answer{QuestionType: domain.QuestionTypeEssay, Value: intValue(1)}, practice.Session.Version); err != nil {
 		t.Fatal("essay practice must accept score 0 through 2", err)
 	}
 }

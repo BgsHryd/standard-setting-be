@@ -104,12 +104,11 @@ func main() {
 	core := service.New(st, nil, "QA-between-password*")
 	for i, id := range p.Subjects[0].PanelistUserIDs {
 		value := []int{45, 70, 90}[i]
-		distribution := make([]int, 5)
-		distribution[i*2] = 100
+		complexScore, essayScore := 2, i*2
 		answers := []domain.Answer{
 			{QuestionType: domain.QuestionTypePG, Value: &value},
-			{QuestionType: domain.QuestionTypeComplex, Distribution: []int{0, 0, 100, 0}},
-			{QuestionType: domain.QuestionTypeEssay, Distribution: distribution},
+			{QuestionType: domain.QuestionTypeComplex, Value: &complexScore},
+			{QuestionType: domain.QuestionTypeEssay, Value: &essayScore},
 		}
 		for j, answer := range answers {
 			if _, err := core.SaveSubmissionWithOptions(ctx, id, "", projectID, "MAT", 1, items[j].ID, answer, service.SubmissionOptions{RoundRevision: 1, CandidateVersion: 1, Reviewed: true}); err != nil {

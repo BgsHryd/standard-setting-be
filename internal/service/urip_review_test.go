@@ -70,3 +70,23 @@ func TestMonitoringFrozenReviewRetainsRemovedCohort(t *testing.T) {
 		t.Fatalf("%+v %v", got, err)
 	}
 }
+
+func TestExtendedAngoffWriteAndHistoricalRead(t *testing.T) {
+	for _, kind := range []domain.QuestionType{domain.QuestionTypeEssay, domain.QuestionTypeComplex, domain.QuestionTypeComplexBS, domain.QuestionTypeComplexMCMA} {
+		item := domain.Item{QuestionType: kind, MaxScore: 2}
+		legacy := domain.Answer{QuestionType: kind, Distribution: []int{0, 50, 50}}
+		if err := validateItemAnswer(item, legacy); err != nil || responseValue(legacy, 2) != 75 {
+			t.Fatal("historical expected score lost", kind, err)
+		}
+		if preparePanelistAnswer(item, &legacy) == nil {
+			t.Fatal("new distribution accepted", kind)
+		}
+		for _, score := range []int{-1, 0, 1, 2, 3} {
+			answer := domain.Answer{QuestionType: kind, Value: &score, MaxScore: 99}
+			err := preparePanelistAnswer(item, &answer)
+			if (err == nil) != (score >= 0 && score <= 2) || answer.MaxScore != 2 {
+				t.Fatal(kind, score, err)
+			}
+		}
+	}
+}
