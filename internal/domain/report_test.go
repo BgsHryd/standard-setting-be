@@ -48,3 +48,19 @@ func TestComputeStatisticsCeilingIgnoresOnlyIntegerBoundaryNoise(t *testing.T) {
 		t.Fatal("none policy must preserve raw cutoff", unrounded)
 	}
 }
+
+func TestWholeTestCutoffRoundsMeanRawPointsBeforePercent(t *testing.T) {
+	items := []Item{{MaxScore: 1}, {MaxScore: 3}, {MaxScore: 2}}
+	for _, tc := range []struct {
+		scores    []float64
+		rawPoints float64
+	}{
+		{[]float64{40, 70}, 3},        // 3.3 becomes 3, not 55 percent.
+		{[]float64{25, 175.0 / 3}, 3}, // Mean 2.5 rounds up.
+	} {
+		result := ComputeTestStatistics(tc.scores, NearestRawPoint, items)
+		if result.OperationalCutoff != tc.rawPoints*100/6 || result.RoundingPolicy != NearestRawPoint || result.Cutoff != (tc.scores[0]+tc.scores[1])/2 {
+			t.Fatal(result)
+		}
+	}
+}

@@ -288,7 +288,7 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 	result.AngoffReview = domain.ComputeAngoffReview(ordered, reviewIDs, reviewValues)
 	ready := len(scores) == len(panelists) && len(scores) > 0 && result.AngoffReview.Ready
 	if ready {
-		stats := domain.ComputeStatistics(scores, projectRoundingPolicy(p))
+		stats := domain.ComputeTestStatistics(scores, projectRoundingPolicy(p), ordered)
 		stats.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
 		stats.RoundNumber = round.Number
 		stats.Revision = domain.RoundRevision(round)
@@ -298,8 +298,13 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 		stats := round.FinalSnapshot.Statistics
 		result.Statistics = &stats
 	}
-	errorReady := ready && result.Statistics != nil && result.Statistics.PanelistCount == result.AngoffReview.CompletePanelistCount
-	result.StandardSettingError = domain.ComputeStandardSettingError(subject.SEM, result.Statistics, errorReady, snapshot != nil)
+	if round.FinalSnapshot != nil && round.Status == "finalized" {
+		result.AngoffReview, err = snapshotAngoffReview(*round.FinalSnapshot)
+		if err != nil {
+			return Monitoring{}, err
+		}
+	}
+	result.StandardSettingError = domain.RoundStandardSettingError(subject.SEM, round.FinalSnapshot, result.Statistics, result.AngoffReview, projectRoundingPolicy(p))
 	result.ItemRounds, err = s.monitoringItemRounds(ctx, p, subject, history, ordered, users)
 	if err != nil {
 		return Monitoring{}, err
@@ -409,7 +414,7 @@ func (s *Service) MonitoringAll(ctx context.Context, id string, round int) (AllM
 				if historyErr != nil {
 					return historyErr
 				}
-				m = Monitoring{AngoffReview: domain.ComputeAngoffReview(nil, nil, nil), StandardSettingError: domain.ComputeStandardSettingError(subject.SEM, nil, false, false), Project: p, Subject: subject, Round: domain.Round{Number: round, Status: "unavailable"}, History: history, Panelists: []MonitoringPanelist{}, Items: []domain.Item{}, ItemGuidance: []MonitoringItemGuidance{}}
+				m = Monitoring{AngoffReview: domain.ComputeAngoffReview(nil, nil, nil), StandardSettingError: domain.RoundStandardSettingError(subject.SEM, nil, nil, domain.AngoffReview{}, projectRoundingPolicy(p)), Project: p, Subject: subject, Round: domain.Round{Number: round, Status: "unavailable"}, History: history, Panelists: []MonitoringPanelist{}, Items: []domain.Item{}, ItemGuidance: []MonitoringItemGuidance{}}
 				err = nil
 			}
 			if err != nil {

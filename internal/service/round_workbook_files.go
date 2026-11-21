@@ -91,18 +91,56 @@ func (w *roundWorkbookSheet) finish(lastRow int) ([]byte, error) {
 }
 
 func renderRoundSummary(bundle workbookSubject) ([]byte, error) {
-	w := newRoundWorkbookSheet("Summary", 4)
+	fields := researchExportFields(nil, nil)
+	unitColumn := 8 + len(fields)
+	w := newRoundWorkbookSheet("Summary", unitColumn)
+	w.cell(unitColumn, 1, "Satuan cut-off dan SD (B–C)")
+	for i, field := range fields {
+		w.cell(8+i, 1, field.title)
+	}
 	for i, title := range []string{"Putaran", "Cut-off test", "Stdev", "ICC"} {
 		w.cell(i+1, 1, title)
 	}
+	w.cell(5, 1, "Metode proyek")
+	w.cell(6, 1, "Pembulatan")
+	w.cell(7, 1, "Ambang operasional (%)")
 	last := 1
 	for i, data := range bundle.rounds {
 		row := i + 2
 		last = row
+		w.cell(5, row, data.method)
+		w.cell(6, row, data.policy)
+		if data.statistics != nil {
+			w.cell(7, row, data.statistics.OperationalCutoff)
+		}
+		for j, field := range researchExportFields(&data.review, &data.uncertainty) {
+			v := field.value
+			if num, ok := v.(*float64); ok {
+				if num == nil {
+					continue
+				}
+				v = *num
+			}
+			if v != nil {
+				w.cell(8+j, row, v)
+			}
+		}
 		w.cell(1, row, fmt.Sprintf("Putaran %d", data.round.Number))
 		if data.statistics != nil {
-			w.cell(2, row, data.statistics.Cutoff)
-			if sd := data.statistics.SampleStandardDeviation; sd != nil {
+			sd := data.statistics.SampleStandardDeviation
+			if data.policy == domain.NearestRawPoint {
+				w.cell(unitColumn, row, "poin tes")
+				if cut := data.review.Mix.CutoffPoints; cut != nil {
+					w.cell(2, row, *cut)
+				} else {
+					w.cell(2, row, "Data poin belum tersedia")
+				}
+				sd = data.review.Mix.SDPoints
+			} else {
+				w.cell(unitColumn, row, "% (cut-off), pp (SD)")
+				w.cell(2, row, data.statistics.Cutoff)
+			}
+			if sd != nil {
 				w.cell(3, row, *sd)
 			} else {
 				w.cell(3, row, "Minimal 2 panelis")
@@ -135,15 +173,28 @@ func renderRoundSummary(bundle workbookSubject) ([]byte, error) {
 
 func renderRoundResponses(data workbookRound) ([]byte, error) {
 	columns := len(data.panelists) + 2
-	w := newRoundWorkbookSheet("Respons", columns)
+	lastColumn := columns
+	if data.policy == domain.NearestRawPoint {
+		lastColumn += 2
+	}
+	w := newRoundWorkbookSheet("Respons", lastColumn)
+	if lastColumn > columns {
+		w.cell(columns+1, 1, "Rentang kontribusi (poin)")
+		w.cell(columns+2, 1, "Tag diskusi")
+	}
 	w.check(w.file.SetColWidth(w.name, "A", "A", 32))
-	w.check(w.file.SetColWidth(w.name, w.lastColumn, w.lastColumn, 78))
+	guidanceColumn, err := excelize.ColumnNumberToName(columns)
+	w.check(err)
+	w.check(w.file.SetColWidth(w.name, guidanceColumn, guidanceColumn, 78))
 	w.cell(1, 1, "ID butir")
 	headerHeight := 36
 	for i, panelist := range data.panelists {
 		label := fmt.Sprintf("Panelis %d", i+1)
 		if panelist.name != "" {
 			label += " - " + panelist.name
+		}
+		if data.policy == domain.NearestRawPoint {
+			label += " · kontribusi (poin)"
 		}
 		w.cell(i+2, 1, label)
 		headerHeight = max(headerHeight, min(400, (1+utf8.RuneCountInString(label)/20)*16))
@@ -154,9 +205,28 @@ func renderRoundResponses(data workbookRound) ([]byte, error) {
 		row := i + 2
 		w.cell(1, row, item.ID)
 		w.check(w.file.SetCellStyle(w.name, fmt.Sprintf("A%d", row), fmt.Sprintf("A%d", row), w.textStyle))
+		var minimum, maximum float64
+		count := 0
 		for j, panelist := range data.panelists {
-			if value, ok := data.values[item.ID][panelist.id]; ok {
+			if value, ok := data.values[panelist.id][item.ID]; ok {
+				if data.policy == domain.NearestRawPoint {
+					if count == 0 || value < minimum {
+						minimum = value
+					}
+					if count == 0 || value > maximum {
+						maximum = value
+					}
+					count++
+					value = value * float64(item.MaxScore) / 100
+				}
 				w.cell(j+2, row, value)
+			}
+		}
+		if count >= 2 {
+			spread := maximum - minimum
+			w.cell(columns+1, row, spread*float64(item.MaxScore)/100)
+			if itemDiscussionPriority(item, spread) {
+				w.cell(columns+2, row, "*")
 			}
 		}
 		message, style := "Menunggu putaran dikunci.", w.textStyle
@@ -186,5 +256,20 @@ func renderRoundResponses(data workbookRound) ([]byte, error) {
 		}
 		w.check(w.file.SetRowHeight(w.name, row, float64(max(48, min(400, (1+utf8.RuneCountInString(item.ID)/30)*16)))))
 	}
-	return w.finish(1 + len(data.items))
+	lastRow := 1 + len(data.items)
+	if data.policy == domain.NearestRawPoint && len(data.review.Rows) > 0 {
+		titles := []string{"Average Modified (proporsi PG)", "Average Extended (poin per butir)", "Cut-off panelis (poin)"}
+		for i, title := range titles {
+			w.cell(1, lastRow+1+i, title)
+		}
+		for j, panelist := range data.review.Rows {
+			for i, metric := range []*float64{panelist.ModifiedMean, panelist.ExtendedMean, panelist.RawPoints} {
+				if metric != nil {
+					w.cell(j+2, lastRow+1+i, *metric)
+				}
+			}
+		}
+		lastRow += len(titles)
+	}
+	return w.finish(lastRow)
 }

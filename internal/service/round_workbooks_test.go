@@ -164,6 +164,9 @@ func TestRoundWorkbooksSeparateSubjectsAndUseFrozenResponses(t *testing.T) {
 	if workbookCell(t, summary, "A1") != "Putaran" || workbookCell(t, summary, "B1") != "Cut-off test" || workbookCell(t, summary, "D1") != "ICC" || workbookCell(t, summary, "A2") != "Putaran 1" || workbookCell(t, summary, "B2") != "70" {
 		t.Fatal("incorrect vertical summary")
 	}
+	if workbookCell(t, summary, "J2") != "2.1" || workbookCell(t, summary, "K2") != "3" || workbookCell(t, summary, "L2") != "70" || workbookCell(t, summary, "M2") != "67.5" || workbookCell(t, summary, "J3") != "" {
+		t.Fatal("research results must use frozen scores and omit incomplete live results")
+	}
 	sd, _ := strconv.ParseFloat(workbookCell(t, summary, "C2"), 64)
 	if math.Abs(sd-math.Sqrt(800)) > 1e-10 || workbookCell(t, summary, "D2") != "0" {
 		t.Fatal("sample SD or valid zero ICC lost", sd, workbookCell(t, summary, "D2"))
@@ -175,7 +178,7 @@ func TestRoundWorkbooksSeparateSubjectsAndUseFrozenResponses(t *testing.T) {
 	if workbookCell(t, frozen, "A2") != "001" || workbookCell(t, frozen, "B1") != "Panelis 1 - Nama saat dikunci" || workbookCell(t, frozen, "B2") != "50" || workbookCell(t, frozen, "C3") != "100" {
 		t.Fatal("snapshot response/name/maximum changed with live data")
 	}
-	if !strings.Contains(workbookCell(t, frozen, "D2"), "Panel cenderung sudah sepakat") {
+	if !strings.Contains(workbookCell(t, frozen, "D2"), "Prioritaskan diskusi") {
 		t.Fatal("missing frozen guidance")
 	}
 	live := files["01-MAT/putaran-2.xlsx"]
@@ -298,6 +301,7 @@ func TestRawResponseCSVRemovesTechnicalColumnsWithoutLosingAnswers(t *testing.T)
 
 func TestRoundWorkbooksActiveWeightedScoresAndExclusions(t *testing.T) {
 	s, st := roundWorkbookFixture()
+	st.project.RoundingPolicy = domain.NearestRawPoint
 	st.items[0].QuestionType = domain.QuestionTypePG
 	st.items[0].MaxScore = 1
 	response := func(id, item string, answer domain.Answer) domain.Submission {
@@ -316,8 +320,11 @@ func TestRoundWorkbooksActiveWeightedScoresAndExclusions(t *testing.T) {
 	files := openRoundWorkbooks(t, data)
 	for name, f := range files {
 		if strings.Contains(name, "rekap_") {
-			if workbookCell(t, f, "B3") != "66" {
-				t.Fatal("active cutoff is not the mean of weighted panelist totals", workbookCell(t, f, "B3"))
+			if workbookCell(t, f, "G3") != "60" {
+				t.Fatal("raw mean 3.3 must round to 3/5", workbookCell(t, f, "G3"))
+			}
+			if workbookCell(t, f, "B3") != "3" {
+				t.Fatal("active cutoff in raw points is incorrect", workbookCell(t, f, "B3"))
 			}
 		}
 	}
@@ -327,7 +334,7 @@ func TestRoundWorkbooksActiveWeightedScoresAndExclusions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, f := range openRoundWorkbooks(t, data) {
-		if strings.Contains(name, "rekap_") && (workbookCell(t, f, "B3") != "84" || workbookCell(t, f, "C3") != "Minimal 2 panelis") {
+		if strings.Contains(name, "rekap_") && (workbookCell(t, f, "B3") != "4" || workbookCell(t, f, "C3") != "Minimal 2 panelis") {
 			t.Fatal("excluded panelist counted or single panelist SD invented")
 		}
 	}

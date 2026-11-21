@@ -17,14 +17,18 @@ var ErrExportConfirmationRequired = errors.New("proyek belum selesai; konfirmasi
 
 type workbookPanelist struct{ id, name string }
 type workbookRound struct {
-	round      domain.Round
-	items      []domain.Item
-	panelists  []workbookPanelist
-	values     map[string]map[string]float64
-	statistics *domain.ItemResult
-	icc        *float64
-	complete   bool
-	source     string
+	round       domain.Round
+	items       []domain.Item
+	panelists   []workbookPanelist
+	values      map[string]map[string]float64
+	statistics  *domain.ItemResult
+	review      domain.AngoffReview
+	uncertainty domain.StandardSettingError
+	method      string
+	policy      string
+	icc         *float64
+	complete    bool
+	source      string
 }
 type workbookSubject struct {
 	subject domain.ProjectSubject
@@ -154,14 +158,22 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 	ids := append([]string(nil), sub.ItemIDs...)
 	rows := []domain.Submission{}
 	candidate := sub.CandidateVersion
-	snapshot := finalMonitoringSnapshot(round)
+	var snapshot *domain.RoundSnapshot
+	if round.Status == "finalized" {
+		snapshot = round.FinalSnapshot
+	}
 	if snapshot != nil {
 		data.source = fmt.Sprintf("Snapshot putaran terkunci, revisi %d.", snapshot.Revision)
+		data.method = snapshotScoringMethod(*snapshot)
+		data.policy = snapshot.RoundingPolicy
+		if data.policy == "" {
+			data.policy = snapshot.Statistics.RoundingPolicy
+		}
 		stats := domain.SampleStatistics(snapshot.Statistics)
 		if stats.PanelistCount > 0 {
 			data.statistics = &stats
 		}
-		rows, candidate = snapshot.Submissions, snapshot.CandidateVersion
+		rows = snapshot.Submissions
 		names := map[string]string{}
 		for _, person := range snapshot.Roster {
 			names[person.PanelistID] = person.PanelistName
@@ -174,30 +186,20 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 		for _, id := range snapshot.PanelistIDs {
 			data.panelists = append(data.panelists, workbookPanelist{id, names[id]})
 		}
-		// Freeze maximum/type from the answer shape, never from edited master data.
+		// Historical item shapes and percentages come exclusively from the frozen answers.
+		var err error
+		byItem, data.values, err = frozenScoringResponses(*snapshot)
+		if err != nil {
+			return data, err
+		}
 		frozenIDs := map[string]bool{}
 		for id := range snapshot.ItemStatistics {
 			frozenIDs[id] = true
 		}
-		for _, row := range rows {
-			if !contains(snapshot.PanelistIDs, row.PanelistID) || !domain.SubmissionReviewed(row, round) || p.FeatureVersion >= 1 && row.CandidateVersion != candidate {
-				continue
+		if len(frozenIDs) == 0 {
+			for id := range byItem {
+				frozenIDs[id] = true
 			}
-			if len(snapshot.ItemStatistics) > 0 && !frozenIDs[row.ItemID] {
-				continue
-			}
-			frozenIDs[row.ItemID] = true
-			if row.Status != "saved" || domain.ValidateAnswer(row.Answer) != nil {
-				continue
-			}
-			maximum := len(row.Answer.Distribution) - 1
-			if row.Answer.Value != nil {
-				maximum = row.Answer.MaxScore
-			}
-			if row.Answer.QuestionType == domain.QuestionTypePG {
-				maximum = 1
-			}
-			byItem[row.ItemID] = domain.Item{ID: row.ItemID, QuestionType: row.Answer.QuestionType, MaxScore: maximum}
 		}
 		ids = nil
 		for _, id := range sub.ItemIDs {
@@ -213,6 +215,10 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 		sort.Strings(extra)
 		ids = append(ids, extra...)
 	} else {
+		if round.Status == "active" {
+			data.method = domain.NormalizeScoringMethod(p.ScoringMethod)
+			data.policy = projectRoundingPolicy(p)
+		}
 		panelists, err := effectivePanelists(p, sub, users, round)
 		if err != nil {
 			return data, err
@@ -236,24 +242,31 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 			item = domain.Item{ID: id}
 		}
 		data.items = append(data.items, item)
-		data.values[id] = map[string]float64{}
 	}
-	included := map[string]bool{}
+	panelistIDs := make([]string, 0, len(data.panelists))
 	for _, panelist := range data.panelists {
-		included[panelist.id] = true
-	}
-	for _, row := range rows {
-		item, ok := byItem[row.ItemID]
-		if !ok || data.values[row.ItemID] == nil || !included[row.PanelistID] || row.Status != "saved" || validateItemAnswer(item, row.Answer) != nil || !domain.SubmissionReviewed(row, round) || p.FeatureVersion >= 1 && row.CandidateVersion != candidate {
-			continue
+		panelistIDs = append(panelistIDs, panelist.id)
+		if snapshot == nil {
+			data.values[panelist.id] = map[string]float64{}
 		}
-		data.values[row.ItemID][row.PanelistID] = responseValue(row.Answer, item.MaxScore)
+	}
+	if snapshot == nil {
+		for _, row := range rows {
+			item, ok := byItem[row.ItemID]
+			if !ok || data.values[row.PanelistID] == nil || row.Status != "saved" || validateItemAnswer(item, row.Answer) != nil || !domain.SubmissionReviewed(row, round) || p.FeatureVersion >= 1 && row.CandidateVersion != candidate {
+				continue
+			}
+			data.values[row.PanelistID][item.ID] = responseValue(row.Answer, item.MaxScore)
+		}
+	}
+	if round.Status == "active" || snapshot != nil && len(snapshot.ItemStatistics) > 0 {
+		data.review = domain.ComputeAngoffReview(data.items, panelistIDs, data.values)
 	}
 	data.complete = len(data.items) > 0 && len(data.panelists) > 0
 	matrix := make([][]float64, len(data.items))
 	for i, item := range data.items {
 		for _, panelist := range data.panelists {
-			value, ok := data.values[item.ID][panelist.id]
+			value, ok := data.values[panelist.id][item.ID]
 			data.complete = data.complete && ok
 			matrix[i] = append(matrix[i], value)
 		}
@@ -263,20 +276,19 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 		if snapshot == nil {
 			scores := []float64{}
 			for _, panelist := range data.panelists {
-				values := map[string]float64{}
-				for _, item := range data.items {
-					values[item.ID] = data.values[item.ID][panelist.id]
-				}
-				score, err := testScoreForItems(data.items, values, p.ScoringMethod)
+				score, err := testScoreForItems(data.items, data.values[panelist.id], p.ScoringMethod)
 				if err != nil {
 					return data, err
 				}
 				scores = append(scores, score)
 			}
-			stats := domain.ComputeStatistics(scores, projectRoundingPolicy(p))
+			stats := domain.ComputeTestStatistics(scores, projectRoundingPolicy(p), data.items)
 			stats.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
 			data.statistics = &stats
 		}
+	}
+	if snapshot != nil || round.Status == "active" {
+		data.uncertainty = domain.RoundStandardSettingError(sub.SEM, snapshot, data.statistics, data.review, projectRoundingPolicy(p))
 	}
 	return data, nil
 }

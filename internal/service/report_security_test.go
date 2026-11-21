@@ -112,3 +112,14 @@ func TestImpactInclusiveBoundaryUsesCorrectedOperationalCutoff(t *testing.T) {
 		t.Fatalf("inclusive decisions %+v", result.Scores)
 	}
 }
+
+func TestImpactUsesRoundedRawPointBoundary(t *testing.T) {
+	report := impactTestReport()
+	report.Subjects[0].RoundingPolicy = domain.NearestRawPoint
+	report.Subjects[0].Statistics = domain.ComputeTestStatistics([]float64{66}, domain.NearestRawPoint, []domain.Item{{MaxScore: 5}})
+	data := impactTestFile(t, [][]any{{"equal-raw", "MAT", 3, "mentah", 5}, {"below", "MAT", 59.99, "persen", 100}})
+	got, err := parseImpact(report, data)
+	if err != nil || !got.Valid || len(got.Scores) != 2 || !got.Scores[0].Passed || got.Scores[1].Passed || got.Subjects[0].OperationalCutoff != 60 {
+		t.Fatal(got, err)
+	}
+}

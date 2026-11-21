@@ -27,15 +27,7 @@ func monitoringItemGuidance(round domain.Round, items []domain.Item) []Monitorin
 					value := stats.Maximum - stats.Minimum
 					row.Range = &value
 					row.State = "agreement"
-					priority := value > 20
-					switch item.QuestionType {
-					case domain.QuestionTypeEssay:
-						priority = value >= 20 // Preserve the legacy essay guidance.
-					case domain.QuestionTypeComplex, domain.QuestionTypeComplexMCMA, domain.QuestionTypeComplexBS:
-						// Frozen maximum converts percentage range back to the original scale.
-						// Tolerance suppresses floating point noise at the exact one-score boundary.
-						priority = item.MaxScore > 0 && value*float64(item.MaxScore)/100 > 1+1e-12
-					}
+					priority := itemDiscussionPriority(item, value)
 					if stats.PanelistCount >= 2 && priority {
 						row.State = "priority"
 					}
@@ -45,4 +37,21 @@ func monitoringItemGuidance(round domain.Round, items []domain.Item) []Monitorin
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// Normalize only numerical noise from converting a score to percentage points and back.
+func reachesDiscussionThreshold(value, threshold float64) bool {
+	tolerance := 8 * (math.Nextafter(1, 2) - 1) * threshold
+	return value >= threshold-tolerance
+}
+
+func itemDiscussionPriority(item domain.Item, spreadPP float64) bool {
+	switch item.QuestionType {
+	case domain.QuestionTypeEssay:
+		return spreadPP >= 20
+	case domain.QuestionTypeComplex, domain.QuestionTypeComplexMCMA, domain.QuestionTypeComplexBS:
+		return item.MaxScore > 0 && reachesDiscussionThreshold(spreadPP*float64(item.MaxScore)/100, 2)
+	default:
+		return reachesDiscussionThreshold(spreadPP, 20)
+	}
 }
