@@ -110,14 +110,7 @@ func (h *Handler) discussion(c *fiber.Ctx) error {
 	if err != nil {
 		return coreError(c, err, 422)
 	}
-	item, err := h.service.GetItem(c.UserContext(), c.Params("itemId"))
-	if err != nil {
-		return errorResponse(c, 404, "butir tidak tersedia")
-	}
-	return success(c, struct {
-		service.ItemFeedback
-		Item fiber.Map `json:"item"`
-	}{r, fiber.Map{"id": item.ID, "questionType": item.QuestionType, "maxScore": item.MaxScore}})
+	return success(c, r)
 }
 func (h *Handler) reviewSubmission(c *fiber.Ctx) error {
 	if err := h.requireService(c); err != nil {

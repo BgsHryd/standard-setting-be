@@ -89,7 +89,7 @@ func TestPanelistPrefillAndRangeUseImmediatelyPreviousSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = s.SaveSubmission(ctx, "p2", "B", p.ID, "MAT", 2, "MAT-003", domain.Answer{QuestionType: domain.QuestionTypeEssay, Distribution: []int{0, 0, 0, 100, 0}}); err != nil {
+	if _, err = s.SaveSubmission(ctx, "p2", "B", p.ID, "MAT", 2, "MAT-003", domain.Answer{QuestionType: domain.QuestionTypeEssay, Value: intValue(3)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.RoundAction(ctx, p.ID, "MAT", "finalize", "FINALISASI PUTARAN", "pic", 2, 1); err != nil {

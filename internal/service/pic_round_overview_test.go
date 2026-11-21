@@ -33,12 +33,17 @@ func picRoundOverviewFixture() (*Service, *picRoundOverviewStore) {
 
 func TestPICRoundOverviewUsesSelectedFrozenResults(t *testing.T) {
 	s, st := picRoundOverviewFixture()
+	st.items[0].MaxScore, st.items[0].QuestionType = 4, domain.QuestionTypeEssay
 	got, err := s.PICRoundOverview(context.Background(), "pic", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Round.Number != 1 || got.RoundReview.RoundNumber != 1 || got.RoundReview.NBKPercent != 65 || len(got.Items) != 1 || len(got.RoundReview.Items) != 1 || got.RoundReview.Items[0].Median != 65 || len(got.RoundOutcomes) != 1 {
 		t.Fatal("wrong frozen round overview", got)
+	}
+	d, err := s.Discussion(context.Background(), "pic", "i", 1)
+	if err != nil || d.Item.MaxScore != 1 || d.Item.QuestionType != domain.QuestionTypePG || got.Items[0].MaxScore != 1 || got.Items[0].QuestionType != domain.QuestionTypePG {
+		t.Fatal("PIC used edited scale for frozen PG", err)
 	}
 	if got.RoundReview.Items[0].OwnValue != nil || len(got.RoundReview.Items[0].Values) != 0 {
 		t.Fatal("small panel/own-score policy broken", got.RoundReview.Items)

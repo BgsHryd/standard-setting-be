@@ -20,7 +20,7 @@ func TestBetweenRoundsUsesFrozenResultsAndPersistentStart(t *testing.T) {
 	if err != nil || !f.RoundStartRequired || f.RoundReview == nil || f.RoundReview.RoundNumber != 1 || len(f.RoundOutcomes) != 1 || len(f.RoundReview.Items) != 3 {
 		t.Fatal("missing review gate", err)
 	}
-	if len(f.RoundReview.Items[1].OwnDistribution) != 4 || len(f.RoundReview.Items[1].PanelDistribution) != 0 || len(f.RoundReview.Items[0].OwnDistribution) != 0 {
+	if f.RoundReview.Items[1].OwnValue == nil || *f.RoundReview.Items[1].OwnValue != 100 || len(f.RoundReview.Items[1].OwnDistribution) != 0 || len(f.RoundReview.Items[1].PanelDistribution) != 0 || len(f.RoundReview.Items[0].OwnDistribution) != 0 {
 		t.Fatal("overview distribution contract incorrect for small panel/PG")
 	}
 	out := f.RoundOutcomes[0]

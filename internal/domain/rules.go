@@ -16,11 +16,11 @@ func ValidateAnswer(answer Answer) error {
 		}
 	case QuestionTypeComplex, QuestionTypeComplexMCMA, QuestionTypeComplexBS, QuestionTypeEssay:
 		if answer.Value != nil {
-			if answer.QuestionType == QuestionTypeEssay || len(answer.Distribution) > 0 || *answer.Value < 0 {
-				return fmt.Errorf("nilai tunggal PGK harus non-negatif tanpa distribusi")
+			if len(answer.Distribution) > 0 || *answer.Value < 0 {
+				return fmt.Errorf("skor harapan harus non-negatif tanpa distribusi")
 			}
 			if answer.MaxScore > 0 && *answer.Value > answer.MaxScore {
-				return fmt.Errorf("nilai PGK melampaui maksimum")
+				return fmt.Errorf("skor harapan melampaui maksimum")
 			}
 			return nil
 		}

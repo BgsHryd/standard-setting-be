@@ -31,7 +31,7 @@ func practiceItems() []domain.Item {
 		{ID: "practice-pg", QuestionType: domain.QuestionTypePG, MaxScore: 1, Rubric: []string{"Contoh latihan pilihan ganda; berikan persentase kandidat yang dapat menjawab benar."}},
 		{ID: "practice-complex-bs", QuestionType: domain.QuestionTypeComplexBS, MaxScore: 3, Rubric: []string{"Contoh pilihan ganda kompleks Benar–Salah. Berikan satu skor 0–3 dari maksimum 3."}},
 		{ID: "practice-complex-mcma", QuestionType: domain.QuestionTypeComplexMCMA, MaxScore: 3, Rubric: []string{"Contoh pilihan ganda kompleks MCMA. Berikan satu skor 0–3 dari maksimum 3."}},
-		{ID: "practice-essay", QuestionType: domain.QuestionTypeEssay, MaxScore: 2, Rubric: []string{"Bagikan 100 kandidat ke skor 0–2."}},
+		{ID: "practice-essay", QuestionType: domain.QuestionTypeEssay, MaxScore: 2, Rubric: []string{"Perkirakan skor rata-rata kandidat batas lulus berdasarkan rubrik. Masukkan satu angka bulat 0–2."}},
 	}
 }
 func (s *Service) practiceScope(ctx context.Context, user string) (domain.User, domain.Project, domain.ProjectSubject, practiceStore, error) {
@@ -150,11 +150,7 @@ func (s *Service) changePractice(ctx context.Context, user string, expected int,
 			for _, item := range v.Items {
 				if item.ID == itemID {
 					found = true
-					answer.MaxScore = 0
-					if answer.Value != nil && answer.QuestionType != domain.QuestionTypePG {
-						answer.MaxScore = item.MaxScore
-					}
-					if err = validateItemAnswer(item, *answer); err != nil {
+					if err = preparePanelistAnswer(item, answer); err != nil {
 						return err
 					}
 				}

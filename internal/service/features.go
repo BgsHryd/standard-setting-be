@@ -255,11 +255,7 @@ func (s *Service) SaveSubmissionWithOptions(ctx context.Context, userID, name, p
 		if item.SubjectCode != subjectCode {
 			return errors.New("ID butir tidak tersedia")
 		}
-		answer.MaxScore = 0
-		if answer.Value != nil && answer.QuestionType != domain.QuestionTypePG {
-			answer.MaxScore = item.MaxScore
-		}
-		if err = validateItemAnswer(item, answer); err != nil {
+		if err = preparePanelistAnswer(item, &answer); err != nil {
 			return err
 		}
 		if err = domain.ValidateNote(input.Note); err != nil {
@@ -397,32 +393,52 @@ func (s *Service) feedback(ctx context.Context, user string, p domain.Project, s
 	}
 	return result
 }
-func (s *Service) Discussion(ctx context.Context, user, itemID string, number int) (ItemFeedback, error) {
+
+type discussionItem struct {
+	ID           string              `json:"id"`
+	QuestionType domain.QuestionType `json:"questionType"`
+	MaxScore     int                 `json:"maxScore"`
+}
+
+type PICDiscussion struct {
+	ItemFeedback
+	Item discussionItem `json:"item"`
+}
+
+func (s *Service) Discussion(ctx context.Context, user, itemID string, number int) (PICDiscussion, error) {
 	pic, err := s.store.FindByID(ctx, user)
 	if err != nil || !pic.Active || pic.Removed || pic.Role != domain.RolePICMapel {
-		return ItemFeedback{}, errors.New("hanya PIC mapel")
+		return PICDiscussion{}, errors.New("hanya PIC mapel")
 	}
 	p, err := s.store.GetProject(ctx, pic.ProjectID)
 	if err != nil {
-		return ItemFeedback{}, err
+		return PICDiscussion{}, err
 	}
 	sub, err := subjectOf(p, pic.SubjectCode)
 	if err != nil || sub.PICUserID != user || !contains(sub.ItemIDs, itemID) {
-		return ItemFeedback{}, errors.New("butir di luar penugasan PIC")
+		return PICDiscussion{}, errors.New("butir di luar penugasan PIC")
 	}
 	history, err := s.store.ListRounds(ctx, p.ID, sub.Code)
 	if err != nil {
-		return ItemFeedback{}, err
+		return PICDiscussion{}, err
 	}
 	for i := len(history) - 1; i >= 0; i-- {
 		r := history[i]
 		if (number == 0 || r.Number == number) && r.Status == "finalized" && r.FinalSnapshot != nil {
 			f := snapshotFeedback(*r.FinalSnapshot, itemID, "")
 			f.OwnValue = nil
-			return f, nil
+			items, _, err := frozenScoringResponses(*r.FinalSnapshot)
+			if err != nil {
+				return PICDiscussion{}, err
+			}
+			item, ok := items[itemID]
+			if !ok {
+				return PICDiscussion{}, errors.New("metadata butir pada snapshot tidak tersedia")
+			}
+			return PICDiscussion{ItemFeedback: f, Item: discussionItem{item.ID, item.QuestionType, item.MaxScore}}, nil
 		}
 	}
-	return ItemFeedback{}, errors.New("snapshot putaran final belum tersedia")
+	return PICDiscussion{}, errors.New("snapshot putaran final belum tersedia")
 }
 func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.ProjectSubject, r domain.Round) (domain.RoundSnapshot, error) {
 	rows, items, err := s.completeResponses(ctx, p, sub, r.Number)
