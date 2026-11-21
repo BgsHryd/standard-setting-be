@@ -224,7 +224,15 @@ type SnapshotPanelist struct {
 	ExclusionReason string `json:"exclusionReason,omitempty" bson:"exclusionReason,omitempty"`
 }
 
+// RoundMeasurement records the configured SEM and its unit at finalization. An empty unit denotes legacy percentage points.
+// A present record with a nil SEM means no SEM was supplied for that round.
+type RoundMeasurement struct {
+	Unit string   `json:"unit,omitempty" bson:"unit,omitempty"`
+	SEM  *float64 `json:"sem" bson:"sem"`
+}
+
 type RoundSnapshot struct {
+	Measurement         *RoundMeasurement     `json:"measurement,omitempty" bson:"measurement,omitempty"`
 	ScoringMethod       string                `json:"scoringMethod,omitempty" bson:"scoringMethod,omitempty"`
 	Roster              []SnapshotPanelist    `json:"roster,omitempty" bson:"roster,omitempty"`
 	ID                  string                `json:"id" bson:"id"`

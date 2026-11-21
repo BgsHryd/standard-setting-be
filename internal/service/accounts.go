@@ -230,7 +230,7 @@ func (s *Service) GenerateAccounts(ctx context.Context, projectID string, inputs
 			return err
 		}
 		p.AccountsGenerated = true
-		p.WizardStep = 5
+		p.WizardStep = 6
 		p.Version++
 		p.UpdatedAt = now
 		if err = s.store.SaveProject(tx, p); err != nil {

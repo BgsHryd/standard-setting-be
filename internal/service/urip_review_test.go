@@ -63,9 +63,10 @@ func TestMonitoringReviewUsesCompleteReviewedCohort(t *testing.T) {
 func TestMonitoringFrozenReviewRetainsRemovedCohort(t *testing.T) {
 	s, st := monitoringHistoryFixture()
 	st.users[0].Removed = true
+	st.rounds[0].FinalSnapshot.ItemStatistics = map[string]domain.ItemResult{"i": {}}
 	st.project.Subjects[0].SEM = new(float64)
 	got, err := s.MonitoringAtRound(context.Background(), "p", "MAT", 1)
-	if err != nil || got.AngoffReview.ActivePanelistCount != 1 || !got.AngoffReview.Ready || got.AngoffReview.Modified.MeanSum == nil || *got.AngoffReview.Modified.MeanSum != .65 || got.StandardSettingError.SEM == nil || !strings.Contains(got.StandardSettingError.Assumption, "SEM historis tidak direkam") {
+	if err != nil || got.AngoffReview.ActivePanelistCount != 1 || !got.AngoffReview.Ready || got.AngoffReview.Modified.MeanSum == nil || *got.AngoffReview.Modified.MeanSum != .65 || got.StandardSettingError.SEM != nil || !strings.Contains(got.StandardSettingError.Assumption, "SEM historis tidak direkam") {
 		t.Fatalf("%+v %v", got, err)
 	}
 }

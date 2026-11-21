@@ -9,11 +9,13 @@ import (
 
 // Aggregate-only DTO: no frozen submissions or panelist identifiers are exposed.
 type MonitoringItemRoundValue struct {
-	ItemID string   `json:"itemId"`
-	Mean   *float64 `json:"mean"`
-	SD     *float64 `json:"sd"`
-	Range  *float64 `json:"range"`
-	N      int      `json:"n"`
+	ItemID       string              `json:"itemId"`
+	QuestionType domain.QuestionType `json:"questionType,omitempty"`
+	MaxScore     int                 `json:"maxScore,omitempty"`
+	Mean         *float64            `json:"mean"`
+	SD           *float64            `json:"sd"`
+	Range        *float64            `json:"range"`
+	N            int                 `json:"n"`
 }
 type MonitoringItemRound struct {
 	Number int                        `json:"number"`
@@ -74,6 +76,13 @@ func (s *Service) monitoringItemRounds(ctx context.Context, p domain.Project, su
 				values[item.ID][row.PanelistID] = responseValue(row.Answer, item.MaxScore)
 			}
 		}
+		var frozen map[string]domain.Item
+		if round.Status == "finalized" && round.FinalSnapshot != nil {
+			frozen, _, err = frozenScoringResponses(*round.FinalSnapshot)
+			if err != nil {
+				return nil, err
+			}
+		}
 		for _, item := range items {
 			stats := domain.ItemResult{}
 			if round.Status == "finalized" && round.FinalSnapshot != nil {
@@ -87,7 +96,12 @@ func (s *Service) monitoringItemRounds(ctx context.Context, p domain.Project, su
 				sort.Float64s(scores)
 				stats = domain.ComputeStatistics(scores, "none")
 			}
-			out.Items = append(out.Items, comparisonValue(item.ID, stats))
+			value := comparisonValue(item.ID, stats)
+			if original, ok := frozen[item.ID]; ok {
+				value.QuestionType = original.QuestionType
+				value.MaxScore = original.MaxScore
+			}
+			out.Items = append(out.Items, value)
 		}
 		result = append(result, out)
 	}

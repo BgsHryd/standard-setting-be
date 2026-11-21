@@ -9,6 +9,45 @@ import (
 // cutoffBoundaryTolerancePP only removes arithmetic noise near an integer decision boundary.
 const cutoffBoundaryTolerancePP = 1e-10
 
+const NearestRawPoint = "nearest_raw_point"
+
+func ValidRoundingPolicy(policy string) bool {
+	switch policy {
+	case NearestRawPoint, "none", "ceil_1pp", "nearest_1pp":
+		return true
+	}
+	return false
+}
+
+// RoundRawPoints implements Excel ROUND on nonnegative raw points, allowing
+// for floating-point noise when converting percentages back onto the rubric.
+func RoundRawPoints(mean float64) float64 {
+	half := math.Floor(mean) + 0.5
+	if math.Abs(mean-half) <= 1e-10 {
+		mean = half
+	}
+	return math.Round(mean)
+}
+
+// ComputeTestStatistics receives validated, complete panelist scores. Under
+// nearest_raw_point the scores are weighted percentages of the same rubric.
+func ComputeTestStatistics(scores []float64, policy string, items []Item) ItemResult {
+	if policy != NearestRawPoint {
+		return ComputeStatistics(scores, policy)
+	}
+	stats := ComputeStatistics(scores, "none")
+	stats.RoundingPolicy = policy
+	var maximum int
+	for _, item := range items {
+		maximum += item.MaxScore
+	}
+	if maximum > 0 {
+		raw := stats.Mean * float64(maximum) / 100
+		stats.OperationalCutoff = 100 * RoundRawPoints(raw) / float64(maximum)
+	}
+	return stats
+}
+
 // ComputeStatistics uses sample SD (n-1) in percentage points. SD and SE
 // require at least two complete observations; population SD is retained separately.
 func ComputeStatistics(input []float64, policy string) ItemResult {

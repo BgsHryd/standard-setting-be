@@ -6,7 +6,7 @@ import (
 )
 
 func TestAngoffReviewCompletePopulation(t *testing.T) {
-	items := []Item{{ID: "pg", QuestionType: QuestionTypePG}, {ID: "pgk", QuestionType: QuestionTypeComplex}, {ID: "essay", QuestionType: QuestionTypeEssay}}
+	items := []Item{{ID: "pg", MaxScore: 1, QuestionType: QuestionTypePG}, {ID: "pgk", MaxScore: 5, QuestionType: QuestionTypeComplex}, {ID: "essay", MaxScore: 4, QuestionType: QuestionTypeEssay}}
 	values := map[string]map[string]float64{"a": {"pg": 60, "pgk": 50, "essay": 100}, "b": {"pg": 80, "pgk": 100, "essay": 50}}
 	got := ComputeAngoffReview(items, []string{"a", "b"}, values)
 	if !got.Ready || got.CompletePanelistCount != 2 || *got.Modified.MeanSum != .7 || *got.Extended.MeanSum != 1.5 || *got.Extended.MeanPercent != 75 {
@@ -51,6 +51,19 @@ func TestStandardSettingErrorUnitsAndAvailability(t *testing.T) {
 	for _, bad := range []float64{-1, math.NaN(), math.Inf(1)} {
 		if ComputeStandardSettingError(&bad, &stats, true, false).SEM != nil {
 			t.Fatal("non-finite or negative SEM")
+		}
+	}
+}
+
+func TestResearchWorkedExample(t *testing.T) {
+	items := []Item{{ID: "p", MaxScore: 1, QuestionType: QuestionTypePG}, {ID: "k", MaxScore: 5, QuestionType: QuestionTypeComplexMCMA}}
+	review := ComputeAngoffReview(items, []string{"a", "b", "c"}, map[string]map[string]float64{"a": {"p": 60, "k": 40}, "b": {"p": 80, "k": 80}, "c": {"p": 70, "k": 60}})
+	for _, pair := range []struct {
+		got  *float64
+		want float64
+	}{{review.MeanRaw, 3.7}, {review.Modified.MeanRaw, .7}, {review.Extended.MeanRaw, 3}, {review.WeightedPercent, 100 * 3.7 / 6}, {review.AveragePercent, 65}, {review.WeightedSEJ, 55 / 3.0 / math.Sqrt(3)}} {
+		if pair.got == nil || math.Abs(*pair.got-pair.want) > 1e-9 {
+			t.Fatalf("unexpected metric %v, want %v", pair.got, pair.want)
 		}
 	}
 }

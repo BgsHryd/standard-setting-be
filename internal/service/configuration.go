@@ -69,7 +69,10 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			}
 			p.SourceProjectID = ""
 			if p.RoundingPolicy == "" {
-				p.RoundingPolicy = "ceil_1pp"
+				p.RoundingPolicy = domain.NearestRawPoint
+				if p.ScoringMethod == domain.ScoringAverage {
+					p.RoundingPolicy = "ceil_1pp"
+				}
 			}
 		} else {
 			var err error
@@ -84,6 +87,9 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 				p.ScoringMethod = domain.NormalizeScoringMethod(old.ScoringMethod)
 			}
 			if old.Status == domain.ProjectCompleted {
+				if old.RoundingPolicy == domain.NearestRawPoint && p.ScoringMethod == domain.ScoringAverage {
+					return errors.New("pembulatan skor mentah memerlukan metode Weighted")
+				}
 				methodChanged := p.ScoringMethod != domain.NormalizeScoringMethod(old.ScoringMethod)
 				old.ScoringMethod = p.ScoringMethod
 				old.EvaluationClosed = input.EvaluationClosed
@@ -140,8 +146,11 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		if p.PlannedRounds < 0 || p.PlannedRounds > 20 || (p.WorkflowVersion >= 1 && p.PlannedRounds < 1) {
 			return errors.New("jumlah putaran harus 1–20")
 		}
-		if p.RoundingPolicy != "" && p.RoundingPolicy != "none" && p.RoundingPolicy != "nearest_1pp" && p.RoundingPolicy != "ceil_1pp" {
+		if p.RoundingPolicy != "" && !domain.ValidRoundingPolicy(p.RoundingPolicy) {
 			return errors.New("kebijakan pembulatan tidak valid")
+		}
+		if p.RoundingPolicy == domain.NearestRawPoint && p.ScoringMethod == domain.ScoringAverage {
+			return errors.New("pembulatan skor mentah memerlukan metode Weighted")
 		}
 		if p.Subjects == nil {
 			p.Subjects = []domain.ProjectSubject{}
@@ -156,6 +165,10 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		byCode := map[string]domain.Subject{}
 		for _, v := range catalog {
 			byCode[v.Code] = v
+		}
+		rawScaleChanged := old.ID != "" && (projectRoundingPolicy(old) == domain.NearestRawPoint) != (projectRoundingPolicy(p) == domain.NearestRawPoint)
+		if rawScaleChanged && old.Status != domain.ProjectDraft {
+			return errors.New("skala pembulatan hanya dapat diubah saat Draft")
 		}
 		selected := []string{}
 		seenSubjects, seenItems, seenSlots := map[string]bool{}, map[string]bool{}, map[string]bool{}
@@ -180,6 +193,9 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 				if v.Code == sub.Code {
 					previous = v
 				}
+			}
+			if rawScaleChanged && previous.SEM != nil && sub.SEM != nil {
+				return errors.New("kosongkan SEM lama saat mengubah skala pembulatan, lalu isi kembali sesuai satuan baru")
 			}
 			sub.PracticeStatus, sub.FinalNBK = previous.PracticeStatus, previous.FinalNBK
 			sub.ShowKJ, sub.ShowMeasure = previous.ShowKJ, previous.ShowMeasure

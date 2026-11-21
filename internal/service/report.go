@@ -37,21 +37,23 @@ type ReportSnapshotReference struct {
 	CreatedAt        time.Time         `json:"createdAt"`
 }
 type ReportSubject struct {
-	RosterComplete      bool                         `json:"rosterComplete"`
-	ArchiveSnapshots    []ReportSnapshotReference    `json:"archiveSnapshots"`
-	Historical          bool                         `json:"historical"`
-	Subject             domain.ProjectSubject        `json:"subject"`
-	Round               ReportRound                  `json:"round"`
-	SnapshotID          string                       `json:"snapshotId"`
-	Statistics          domain.ItemResult            `json:"statistics"`
-	ItemStatistics      map[string]domain.ItemResult `json:"itemStatistics"`
-	RoundingPolicy      string                       `json:"roundingPolicy"`
-	CandidateDefinition string                       `json:"candidateDefinition"`
-	CandidateVersion    int                          `json:"candidateVersion"`
-	Legacy              bool                         `json:"legacy"`
-	Available           bool                         `json:"available"`
-	Warning             string                       `json:"warning,omitempty"`
-	Responses           []ReportResponse             `json:"responses"`
+	AngoffReview         *domain.AngoffReview         `json:"angoffReview,omitempty"`
+	StandardSettingError *domain.StandardSettingError `json:"standardSettingError,omitempty"`
+	RosterComplete       bool                         `json:"rosterComplete"`
+	ArchiveSnapshots     []ReportSnapshotReference    `json:"archiveSnapshots"`
+	Historical           bool                         `json:"historical"`
+	Subject              domain.ProjectSubject        `json:"subject"`
+	Round                ReportRound                  `json:"round"`
+	SnapshotID           string                       `json:"snapshotId"`
+	Statistics           domain.ItemResult            `json:"statistics"`
+	ItemStatistics       map[string]domain.ItemResult `json:"itemStatistics"`
+	RoundingPolicy       string                       `json:"roundingPolicy"`
+	CandidateDefinition  string                       `json:"candidateDefinition"`
+	CandidateVersion     int                          `json:"candidateVersion"`
+	Legacy               bool                         `json:"legacy"`
+	Available            bool                         `json:"available"`
+	Warning              string                       `json:"warning,omitempty"`
+	Responses            []ReportResponse             `json:"responses"`
 }
 type ReportManifest struct {
 	SchemaVersion     int       `json:"schemaVersion"`
@@ -165,6 +167,14 @@ func (s *Service) ProjectReportRevision(ctx context.Context, id string, number, 
 				r.Available = true
 				r.SnapshotID = snapshot.ID
 				r.Statistics = snapshot.Statistics
+				r.Statistics.ScoringMethod = snapshotScoringMethod(*snapshot)
+				review, err := snapshotAngoffReview(*snapshot)
+				if err != nil {
+					return err
+				}
+				r.AngoffReview = &review
+				uncertainty := domain.RoundStandardSettingError(sub.SEM, snapshot, &r.Statistics, review)
+				r.StandardSettingError = &uncertainty
 				r.ItemStatistics = snapshot.ItemStatistics
 				r.RoundingPolicy = snapshot.RoundingPolicy
 				r.CandidateDefinition = snapshot.CandidateDefinition
@@ -226,6 +236,77 @@ func (s *Service) ProjectReportRevision(ctx context.Context, id string, number, 
 	result.Manifest = ReportManifest{SchemaVersion: 1, GeneratedAt: result.GeneratedAt, RequestedRound: number, RequestedRevision: revision, Source: "final_snapshot; legacy rows explicitly labelled"}
 	return result, err
 }
+
+// The historical default for snapshots predating the method field is Weighted.
+func snapshotScoringMethod(snapshot domain.RoundSnapshot) string {
+	method := snapshot.Statistics.ScoringMethod
+	if method == "" {
+		method = snapshot.ScoringMethod
+	}
+	return domain.NormalizeScoringMethod(method)
+}
+
+type researchExportField struct {
+	csvName, title string
+	value          any
+}
+
+// XLSX and localized CSV expose the same units and never round stored numbers.
+func researchExportFields(review *domain.AngoffReview, uncertainty *domain.StandardSettingError) []researchExportField {
+	var panelists, complete, maxPoints, pgMax, extendedMax any
+	if review == nil {
+		review = &domain.AngoffReview{}
+	}
+	if review.FormulaVersion != "" {
+		panelists, complete = review.ActivePanelistCount, review.CompletePanelistCount
+	}
+	if review.Ready && review.MeanRaw != nil {
+		maxPoints = review.MaxPoints
+		if review.Modified.ItemCount > 0 {
+			pgMax = review.Modified.MaxPoints
+		}
+		if review.Extended.ItemCount > 0 {
+			extendedMax = review.Extended.MaxPoints
+		}
+	}
+	if uncertainty == nil {
+		uncertainty = &domain.StandardSettingError{}
+	}
+	var legacySEJ, legacySEM, legacyCombined, rawSEM, rawCombined *float64
+	if uncertainty.Unit == "raw_points" {
+		rawSEM, rawCombined = uncertainty.SEM, uncertainty.SeSS
+	} else {
+		legacySEJ, legacySEM, legacyCombined = uncertainty.SEJ, uncertainty.SEM, uncertainty.SeSS
+	}
+	return []researchExportField{
+		{"includedPanelists", "Panelis diikutkan", panelists},
+		{"completePanelists", "Panelis lengkap", complete},
+		{"meanRawPoints", "NBK mentah (poin)", review.MeanRaw},
+		{"maxPoints", "Maksimum tes (poin)", maxPoints},
+		{"weightedPercent", "NBK Weighted (%)", review.WeightedPercent},
+		{"averagePercent", "NBK Average (%)", review.AveragePercent},
+		{"pgMeanRawPoints", "PG · rata-rata poin harapan", review.Modified.MeanRaw},
+		{"pgMaxPoints", "PG · maksimum (poin)", pgMax},
+		{"pgMeanItemPercent", "PG · rata-rata persen butir (%)", review.Modified.MeanPercent},
+		{"extendedMeanRawPoints", "PGK/essay · rata-rata poin harapan", review.Extended.MeanRaw},
+		{"extendedMaxPoints", "PGK/essay · maksimum (poin)", extendedMax},
+		{"extendedMeanItemPercent", "PGK/essay · rata-rata persen butir (%)", review.Extended.MeanPercent},
+		{"weightedSEJPP", "SEJ Weighted (pp)", review.WeightedSEJ},
+		{"operationalMethodSEJPP", "SEJ metode proyek (pp)", legacySEJ},
+		{"configuredSEMPP", "SEM peserta terkonfigurasi (pp)", legacySEM},
+		{"conditionalDifferenceErrorPP", "Galat selisih bersyarat (pp)", legacyCombined},
+		{"modifiedMean", "Cut-off Modified (proporsi)", review.Mix.ModifiedMean},
+		{"extendedMean", "Cut-off Extended (poin per butir)", review.Mix.ExtendedMean},
+		{"mixCutoffPoints", "Cut-off putaran (poin bulat)", review.Mix.CutoffPoints},
+		{"mixCutoffPercent", "Cut-off putaran (%)", review.Mix.CutoffPercent},
+		{"sdPoints", "SD cut-off panelis (poin)", review.Mix.SDPoints},
+		{"sejPoints", "SEJ panelis (poin)", review.Mix.SEJPoints},
+		{"semPoints", "SEM mapel (poin)", rawSEM},
+		{"combinedPoints", "Galat gabungan (poin bulat)", rawCombined},
+		{"uncertaintyAssumption", "Asumsi galat selisih", uncertainty.Assumption},
+	}
+}
+
 func csvCell(value any, locale string) string {
 	if value == nil {
 		return ""
@@ -297,6 +378,12 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 	}
 	rows := [][]any{}
 	headers := []string{"schemaVersion", "projectId", "projectCode", "subjectCode", "round", "revision", "snapshotId", "legacy", "historical", "n", "cutoff", "roundingPolicy", "operationalCutoff", "mean", "median", "populationSD", "sampleSD", "standardErrorPP", "minimum", "maximum", "generatedAt"}
+	if kind == "summary" {
+		headers = append(headers, "scoringMethod")
+		for _, field := range researchExportFields(nil, nil) {
+			headers = append(headers, field.csvName)
+		}
+	}
 	for _, sub := range report.Subjects {
 		if kind == "summary" {
 			if !sub.Available && !sub.Legacy {
@@ -316,7 +403,11 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 				minimum = st.Minimum
 				maximum = st.Maximum
 			}
-			rows = append(rows, []any{1, id, report.Project.Code, sub.Subject.Code, sub.Round.Number, sub.Round.Revision, sub.SnapshotID, sub.Legacy, sub.Historical, count, cutoff, sub.RoundingPolicy, operational, mean, median, sd, sample, se, minimum, maximum, report.GeneratedAt.Format(time.RFC3339)})
+			summary := []any{2, id, report.Project.Code, sub.Subject.Code, sub.Round.Number, sub.Round.Revision, sub.SnapshotID, sub.Legacy, sub.Historical, count, cutoff, sub.RoundingPolicy, operational, mean, median, sd, sample, se, minimum, maximum, report.GeneratedAt.Format(time.RFC3339), st.ScoringMethod}
+			for _, field := range researchExportFields(sub.AngoffReview, sub.StandardSettingError) {
+				summary = append(summary, field.value)
+			}
+			rows = append(rows, summary)
 			continue
 		}
 		for _, response := range sub.Responses {

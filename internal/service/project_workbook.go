@@ -67,7 +67,7 @@ func (s *Service) ProjectWorkbookTemplate(ctx context.Context) ([]byte, error) {
 	instructions := []string{
 		"Isi empat sheet Proyek, Mapel, Butir, Personel. Satu file membuat satu proyek Draft baru.",
 		"Proyek: tepat satu baris. Tanggal teks YYYY-MM-DD, termasuk hari selesai, zona waktu Asia/Jakarta.",
-		"Pembulatan: ceil_1pp, nearest_1pp, atau none. Kumpulkan kontak: true atau false.",
+		"Pembulatan: nearest_raw_point (default jika kosong), ceil_1pp, nearest_1pp, atau none. Kumpulkan kontak: true atau false.",
 		"Mapel: satu baris per nama/kode dari Referensi mapel. Definisi kandidat opsional, maksimal 8000 karakter; dapat diisi PIC mapel.",
 		"Butir: satu baris per ID butir tersedia di bank soal. Butir dialokasikan setelah seluruh validasi lolos.",
 		"Personel: tepat satu pic_mapel dan 1–1000 panelis per mapel. Isi nama setiap personel.",
@@ -185,7 +185,7 @@ func (s *Service) ImportProjectWorkbook(ctx context.Context, data []byte, apply 
 				}
 			}
 		}
-		p := domain.Project{Status: domain.ProjectDraft, WizardStep: 4, FeatureVersion: 1, WorkflowVersion: 1, PlannedRounds: 3, Subjects: []domain.ProjectSubject{}}
+		p := domain.Project{Status: domain.ProjectDraft, WizardStep: 5, FeatureVersion: 1, WorkflowVersion: 1, PlannedRounds: 3, Subjects: []domain.ProjectSubject{}}
 		metadataRows := 0
 		each("Proyek", func(n int, row []string) {
 			metadataRows++
@@ -196,6 +196,10 @@ func (s *Service) ImportProjectWorkbook(ctx context.Context, data []byte, apply 
 			p.Name = cell(row, 0)
 			p.Description = cell(row, 1)
 			p.RoundingPolicy = cell(row, 4)
+			if p.RoundingPolicy == "" {
+				p.RoundingPolicy = domain.NearestRawPoint
+			}
+			p.ScoringMethod = domain.ScoringWeighted
 			if p.Name == "" || len([]rune(p.Name)) > 200 {
 				problem("Proyek", n, "nama_proyek", p.Name, "nama proyek wajib 1–200 karakter")
 			}
@@ -217,8 +221,8 @@ func (s *Service) ImportProjectWorkbook(ctx context.Context, data []byte, apply 
 			if !p.StartDate.IsZero() && !p.EndDate.IsZero() && !p.EndDate.After(p.StartDate) {
 				problem("Proyek", n, "tanggal_selesai", cell(row, 3), "periode selesai harus pada atau sesudah periode mulai")
 			}
-			if p.RoundingPolicy != "none" && p.RoundingPolicy != "nearest_1pp" && p.RoundingPolicy != "ceil_1pp" {
-				problem("Proyek", n, "pembulatan", p.RoundingPolicy, "pilih none, nearest_1pp, atau ceil_1pp")
+			if !domain.ValidRoundingPolicy(p.RoundingPolicy) {
+				problem("Proyek", n, "pembulatan", p.RoundingPolicy, "pilih nearest_raw_point, none, nearest_1pp, atau ceil_1pp")
 			}
 			switch cell(row, 5) {
 			case "true":

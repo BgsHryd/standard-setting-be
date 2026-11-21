@@ -14,18 +14,38 @@ import (
 	"standard-setting/backend/internal/domain"
 )
 
-// RoundOutcome contains only frozen aggregates, never roster or other users' answers.
+// RoundRecommendation is the anonymous panel summary plus the caller's own total.
+type RoundRecommendation struct {
+	Mix             domain.MixAngoff `json:"mix"`
+	OwnModifiedMean *float64         `json:"ownModifiedMean,omitempty"`
+	OwnExtendedMean *float64         `json:"ownExtendedMean,omitempty"`
+	MeanRaw         float64          `json:"meanRaw"`
+	WeightedPercent float64          `json:"weightedPercent"`
+	AveragePercent  float64          `json:"averagePercent"`
+	WeightedSEJ     *float64         `json:"weightedSej"`
+	PGRaw           *float64         `json:"pgRaw"`
+	PGMax           int              `json:"pgMax"`
+	ExtendedRaw     *float64         `json:"extendedRaw"`
+	ExtendedMax     int              `json:"extendedMax"`
+	OwnRaw          *float64         `json:"ownRaw,omitempty"`
+}
+
+// RoundOutcome contains frozen results, never roster or other users' answers.
 type RoundOutcome struct {
-	RoundNumber       int       `json:"roundNumber"`
-	Revision          int       `json:"revision"`
-	FinalizedAt       time.Time `json:"finalizedAt"`
-	PanelistCount     int       `json:"panelistCount"`
-	NBKPercent        float64   `json:"nbkPercent"`
-	RoundingPolicy    string    `json:"roundingPolicy"`
-	MaxScore          *float64  `json:"maxScore"`
-	NBKScore          *float64  `json:"nbkScore"`
-	ProjectionPercent *float64  `json:"projectionPercent"`
-	ProjectionCount   int       `json:"projectionCount"`
+	Errors            domain.StandardSettingError `json:"errors"`
+	RoundNumber       int                         `json:"roundNumber"`
+	Revision          int                         `json:"revision"`
+	FinalizedAt       time.Time                   `json:"finalizedAt"`
+	PanelistCount     int                         `json:"panelistCount"`
+	ScoringMethod     string                      `json:"scoringMethod"`
+	Recommendation    *RoundRecommendation        `json:"recommendation"`
+	SEM               *float64                    `json:"sem"`
+	NBKPercent        float64                     `json:"nbkPercent"`
+	RoundingPolicy    string                      `json:"roundingPolicy"`
+	MaxScore          *float64                    `json:"maxScore"`
+	NBKScore          *float64                    `json:"nbkScore"`
+	ProjectionPercent *float64                    `json:"projectionPercent"`
+	ProjectionCount   int                         `json:"projectionCount"`
 }
 
 type RoundReview struct {
@@ -61,6 +81,50 @@ func snapshotMaxScore(snap domain.RoundSnapshot) *float64 {
 	return &total
 }
 
+func frozenRoundOutcome(snap domain.RoundSnapshot, user string) RoundOutcome {
+	method := snap.ScoringMethod
+	if method == "" {
+		method = snap.Statistics.ScoringMethod
+	}
+	out := RoundOutcome{
+		RoundNumber: snap.RoundNumber, Revision: snap.Revision, FinalizedAt: snap.CreatedAt,
+		PanelistCount: snap.Statistics.PanelistCount, NBKPercent: snap.Statistics.OperationalCutoff,
+		RoundingPolicy: snap.RoundingPolicy, ScoringMethod: domain.NormalizeScoringMethod(method),
+	}
+	if snap.Measurement != nil {
+		out.SEM = snap.Measurement.SEM
+	}
+	review, err := snapshotAngoffReview(snap)
+	out.Errors = domain.RoundStandardSettingError(nil, &snap, &snap.Statistics, review)
+	if err == nil && review.Ready && review.CompletePanelistCount == out.PanelistCount &&
+		review.MeanRaw != nil && review.WeightedPercent != nil && review.AveragePercent != nil {
+		maximum := float64(review.MaxPoints)
+		out.MaxScore = &maximum
+		out.Recommendation = &RoundRecommendation{
+			Mix: review.Mix, MeanRaw: *review.MeanRaw, WeightedPercent: *review.WeightedPercent,
+			AveragePercent: *review.AveragePercent, WeightedSEJ: review.WeightedSEJ,
+			PGRaw: review.Modified.MeanRaw, PGMax: review.Modified.MaxPoints,
+			ExtendedRaw: review.Extended.MeanRaw, ExtendedMax: review.Extended.MaxPoints,
+		}
+		for _, row := range review.Rows {
+			if user != "" && row.PanelistID == user {
+				out.Recommendation.OwnRaw = row.RawPoints
+				out.Recommendation.OwnModifiedMean = row.ModifiedMean
+				out.Recommendation.OwnExtendedMean = row.ExtendedMean
+				break
+			}
+		}
+	} else {
+		out.MaxScore = snapshotMaxScore(snap)
+	}
+	// A percentage on the equal-item scale has no unique equivalent in raw test points.
+	if out.ScoringMethod == domain.ScoringWeighted && out.MaxScore != nil {
+		score := out.NBKPercent * *out.MaxScore / 100
+		out.NBKScore = &score
+	}
+	return out
+}
+
 func (s *Service) roundResults(ctx context.Context, user string, p domain.Project, subject domain.ProjectSubject, current domain.Round, history []domain.Round) (*RoundReview, []RoundOutcome, error) {
 	outcomes := []RoundOutcome{}
 	var review *RoundReview
@@ -83,11 +147,7 @@ func (s *Service) roundResults(ctx context.Context, user string, p domain.Projec
 		if snap.Revision != domain.RoundRevision(round) {
 			continue
 		}
-		out := RoundOutcome{RoundNumber: snap.RoundNumber, Revision: snap.Revision, FinalizedAt: snap.CreatedAt, PanelistCount: snap.Statistics.PanelistCount, NBKPercent: snap.Statistics.OperationalCutoff, RoundingPolicy: snap.RoundingPolicy, MaxScore: snapshotMaxScore(snap)}
-		if out.MaxScore != nil {
-			score := out.NBKPercent * *out.MaxScore / 100
-			out.NBKScore = &score
-		}
+		out := frozenRoundOutcome(snap, user)
 		var newest time.Time
 		for _, batch := range batches {
 			for _, aggregate := range batch.Subjects {

@@ -433,7 +433,11 @@ func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.
 	if err != nil {
 		return domain.RoundSnapshot{}, err
 	}
-	snap := domain.RoundSnapshot{ID: fmt.Sprintf("%s-r%d", r.ID, domain.RoundRevision(r)), Revision: domain.RoundRevision(r), RoundNumber: r.Number, SubjectCode: sub.Code, PanelistIDs: []string{}, ItemStatistics: map[string]domain.ItemResult{}, Submissions: all, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: sub.CandidateVersion, RoundingPolicy: projectRoundingPolicy(p), CreatedAt: time.Now().UTC()}
+	semUnit := "percentage_points"
+	if projectRoundingPolicy(p) == domain.NearestRawPoint {
+		semUnit = "raw_points"
+	}
+	snap := domain.RoundSnapshot{Measurement: &domain.RoundMeasurement{SEM: sub.SEM, Unit: semUnit}, ID: fmt.Sprintf("%s-r%d", r.ID, domain.RoundRevision(r)), Revision: domain.RoundRevision(r), RoundNumber: r.Number, SubjectCode: sub.Code, PanelistIDs: []string{}, ItemStatistics: map[string]domain.ItemResult{}, Submissions: all, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: sub.CandidateVersion, RoundingPolicy: projectRoundingPolicy(p), CreatedAt: time.Now().UTC()}
 	for _, row := range rows {
 		if !contains(snap.PanelistIDs, row.PanelistID) {
 			snap.PanelistIDs = append(snap.PanelistIDs, row.PanelistID)
@@ -473,7 +477,7 @@ func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.
 		}
 		scores = append(scores, score)
 	}
-	snap.Statistics = domain.ComputeStatistics(scores, projectRoundingPolicy(p))
+	snap.Statistics = domain.ComputeTestStatistics(scores, projectRoundingPolicy(p), items)
 	snap.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
 	snap.Statistics.ScoringMethod = snap.ScoringMethod
 	snap.Statistics.RoundNumber = r.Number
@@ -487,7 +491,11 @@ func (s *Service) freezeRound(ctx context.Context, p domain.Project, sub domain.
 				values = append(values, responseValue(row.Answer, item.MaxScore))
 			}
 		}
-		stats := domain.ComputeStatistics(values, projectRoundingPolicy(p))
+		itemPolicy := projectRoundingPolicy(p)
+		if itemPolicy == domain.NearestRawPoint {
+			itemPolicy = "none" // Only the whole-test cutoff is rounded.
+		}
+		stats := domain.ComputeStatistics(values, itemPolicy)
 		stats.PanelistIDs = snap.PanelistIDs
 		stats.RoundNumber = r.Number
 		stats.Revision = snap.Revision
@@ -511,7 +519,7 @@ func (s *Service) CopyProject(ctx context.Context, id, name, actor string) (doma
 		for _, sub := range source.Subjects {
 			subjs = append(subjs, domain.ProjectSubject{Code: sub.Code, Name: sub.Name, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: 1, PanelistCount: sub.PanelistCount, PanelistNames: append([]string(nil), sub.PanelistNames...), PICName: sub.PICName, ItemIDs: []string{}, PanelistUserIDs: []string{}})
 		}
-		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, PlannedRounds: source.PlannedRounds, SimulationEnabled: source.SimulationEnabled, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis, RoundingPolicy: source.RoundingPolicy, ScoringMethod: source.ScoringMethod}, actor)
+		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, PlannedRounds: source.PlannedRounds, SimulationEnabled: source.SimulationEnabled, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis, RoundingPolicy: projectRoundingPolicy(source), ScoringMethod: source.ScoringMethod}, actor)
 		if err != nil {
 			return err
 		}

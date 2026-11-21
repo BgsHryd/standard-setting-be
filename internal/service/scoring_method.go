@@ -105,7 +105,10 @@ func recalculateSnapshot(snap domain.RoundSnapshot, method, fallbackPolicy strin
 	if policy == "" {
 		policy = fallbackPolicy
 	}
-	stats := domain.ComputeStatistics(scores, policy)
+	if policy == domain.NearestRawPoint && method == domain.ScoringAverage {
+		return snap, errors.New("snapshot dengan pembulatan skor mentah memerlukan metode Weighted")
+	}
+	stats := domain.ComputeTestStatistics(scores, policy, ordered)
 	stats.ScoringMethod = domain.NormalizeScoringMethod(method)
 	stats.RoundNumber, stats.Revision, stats.CompletedAt = snap.Statistics.RoundNumber, snap.Statistics.Revision, snap.Statistics.CompletedAt
 	stats.PanelistIDs = append([]string(nil), snap.Statistics.PanelistIDs...)
@@ -163,4 +166,22 @@ func (s *Service) recalculateProjectScoring(ctx context.Context, p *domain.Proje
 		}
 	}
 	return s.recordAudit(ctx, actor, p.ID, p.ID, "project_scoring_"+p.ScoringMethod)
+}
+
+// snapshotAngoffReview uses only the roster, rubric and responses of the selected revision.
+func snapshotAngoffReview(snap domain.RoundSnapshot) (domain.AngoffReview, error) {
+	items, values, err := frozenScoringResponses(snap)
+	if err != nil {
+		return domain.AngoffReview{}, err
+	}
+	ids := make([]string, 0, len(snap.ItemStatistics))
+	for id := range snap.ItemStatistics {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	ordered := make([]domain.Item, 0, len(ids))
+	for _, id := range ids {
+		ordered = append(ordered, items[id])
+	}
+	return domain.ComputeAngoffReview(ordered, snap.PanelistIDs, values), nil
 }

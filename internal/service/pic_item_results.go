@@ -80,6 +80,9 @@ func (s *Service) PICItemResults(ctx context.Context, id string, number int) (PI
 			included[panelist.ID] = true
 			result.Panelists = append(result.Panelists, PICResultPanelist{panelist.ID, panelist.Name})
 		}
+		if snapshot != nil {
+			result.ScoringMethod = snapshotScoringMethod(*snapshot)
+		}
 		rows := []domain.Submission{}
 		if snapshot != nil {
 			rows = snapshot.Submissions

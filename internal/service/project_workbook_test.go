@@ -89,6 +89,18 @@ func TestProjectWorkbookPreviewValidatesWithoutWriting(t *testing.T) {
 		t.Fatal("same-day period must cover the full Jakarta day")
 	}
 }
+func TestProjectWorkbookDefaultsToRawPointRounding(t *testing.T) {
+	s := New(&projectWorkbookStore{}, nil, "12345*")
+	f := filledProjectWorkbook(t, s)
+	if err := f.SetCellValue("Proyek", "E2", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ImportProjectWorkbook(context.Background(), workbookBytes(t, f), false, "admin")
+	if err != nil || !got.Valid || got.Project == nil || got.Project.RoundingPolicy != domain.NearestRawPoint || got.Project.ScoringMethod != domain.ScoringWeighted {
+		t.Fatal(got, err)
+	}
+}
+
 func TestProjectWorkbookAllowsPICToFillCandidateLater(t *testing.T) {
 	st := &projectWorkbookStore{}
 	s := New(st, nil, "12345*")
@@ -143,7 +155,7 @@ func TestProjectWorkbookCreatesOnlyDraftAndAllocatesAccountsAtomically(t *testin
 		t.Fatalf("import failed %+v %v", got, err)
 	}
 	p := got.Project
-	if p.ID == old.ID || p.Status != domain.ProjectDraft || !p.AccountsGenerated || p.WizardStep != 5 {
+	if p.ID == old.ID || p.Status != domain.ProjectDraft || !p.AccountsGenerated || p.WizardStep != 6 {
 		t.Fatalf("wrong draft %+v", p)
 	}
 	users, err := st.ListUsers(ctx, p.ID)

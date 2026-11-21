@@ -39,10 +39,24 @@ func TestRecalculateSnapshotUsesFrozenIncludedResponses(t *testing.T) {
 	}
 }
 
+func TestRecalculateRawPointCutoffUsesFrozenRubric(t *testing.T) {
+	_, st := roundWorkbookFixture()
+	snapshot := *st.rounds["MAT"][0].FinalSnapshot
+	snapshot.RoundingPolicy = domain.NearestRawPoint
+	updated, err := recalculateSnapshot(snapshot, domain.ScoringWeighted, "ceil_1pp")
+	// The frozen test is worth 3 points. Its mean of 2.1 rounds to 2.
+	if err != nil || updated.Statistics.Cutoff != 70 || updated.Statistics.OperationalCutoff != 200.0/3 || updated.Statistics.RoundingPolicy != domain.NearestRawPoint {
+		t.Fatal(updated.Statistics, err)
+	}
+	if _, err := recalculateSnapshot(snapshot, domain.ScoringAverage, "ceil_1pp"); err == nil {
+		t.Fatal("raw snapshot was reinterpreted as Average")
+	}
+}
+
 func TestProjectScoringMethodDefaultAndValidation(t *testing.T) {
 	ctx, s, _, _ := fixture(t, false)
 	p, err := s.SaveProject(ctx, domain.Project{Name: "Default method"}, "admin")
-	if err != nil || p.ScoringMethod != "weighted" {
+	if err != nil || p.ScoringMethod != "weighted" || p.RoundingPolicy != domain.NearestRawPoint {
 		t.Fatal("new project must default weighted", p.ScoringMethod, err)
 	}
 	p.ScoringMethod = "unknown"
@@ -50,6 +64,10 @@ func TestProjectScoringMethodDefaultAndValidation(t *testing.T) {
 		t.Fatal("invalid method accepted")
 	}
 	p.ScoringMethod = "average"
+	if _, err := s.SaveProject(ctx, p, "admin"); err == nil {
+		t.Fatal("raw-point policy accepted with Average")
+	}
+	p.RoundingPolicy = "ceil_1pp"
 	p, err = s.SaveProject(ctx, p, "admin")
 	if err != nil {
 		t.Fatal(err)
