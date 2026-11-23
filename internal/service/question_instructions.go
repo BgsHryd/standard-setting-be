@@ -75,8 +75,8 @@ func (s *Service) SaveQuestionInstructionSettings(ctx context.Context, actor str
 	}
 	err := s.store.WithTransaction(ctx, func(tx context.Context) error {
 		user, err := s.store.FindByID(tx, actor)
-		if err != nil || !user.Active || user.Removed || user.Role != domain.RoleAdminSuper {
-			return errors.New("hanya Admin Super aktif dapat mengubah petunjuk")
+		if err != nil || !user.Active || user.Removed || !user.Role.IsAdministrative() {
+			return errors.New("hanya admin aktif dapat mengubah petunjuk")
 		}
 		known := domain.DefaultQuestionInstructions()
 		if len(content) != len(known) {

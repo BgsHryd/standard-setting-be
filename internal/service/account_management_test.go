@@ -15,11 +15,12 @@ import (
 // This store holds only this test's data and rolls back failed transactions.
 type accountManagementStore struct {
 	Store
-	project  domain.Project
-	users    map[string]domain.User
-	audits   []domain.AuditEvent
-	failSave bool
-	touches  int
+	project   domain.Project
+	users     map[string]domain.User
+	audits    []domain.AuditEvent
+	failAudit bool
+	failSave  bool
+	touches   int
 }
 
 func (st *accountManagementStore) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
@@ -72,6 +73,15 @@ func (st *accountManagementStore) FindByUsername(_ context.Context, name string)
 	}
 	return domain.User{}, mongo.ErrNoDocuments
 }
+func (st *accountManagementStore) ListUsers(_ context.Context, projectID string) ([]domain.User, error) {
+	var users []domain.User
+	for _, u := range st.users {
+		if projectID == "" || u.ProjectID == projectID {
+			users = append(users, u)
+		}
+	}
+	return users, nil
+}
 func (st *accountManagementStore) SaveUser(_ context.Context, u domain.User) error {
 	if _, ok := st.users[u.ID]; !ok {
 		return mongo.ErrNoDocuments
@@ -89,6 +99,9 @@ func (st *accountManagementStore) InsertUsers(_ context.Context, users []domain.
 	return nil
 }
 func (st *accountManagementStore) RecordAudit(_ context.Context, e domain.AuditEvent) error {
+	if st.failAudit {
+		return errors.New("audit unavailable")
+	}
 	st.audits = append(st.audits, e)
 	return nil
 }

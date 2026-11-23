@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"standard-setting/backend/internal/auth"
 	"standard-setting/backend/internal/domain"
+	"standard-setting/backend/internal/service"
 )
 
 func roleApp(t *testing.T, role domain.Role, firstLogin bool) (*App, *testUsers, auth.BrowserResult) {
@@ -37,6 +38,14 @@ func TestDeclaredRoleReachesOwnHandlerAndCannotReachOtherRoles(t *testing.T) {
 		{domain.RolePICMapel, "/api/v1/projects", 403},
 		{domain.RolePanelist, "/api/v1/pic/monitoring", 403},
 		{domain.RoleAdminSuper, "/api/v1/panelist/form", 403},
+		{domain.RoleAdmin, "/api/v1/panelist/form", 403},
+		{domain.RoleAdmin, "/api/v1/config/question-instructions", 503},
+		{domain.RoleUserMonitoring, "/api/v1/projects", 403},
+		{domain.RoleUserMonitoring, "/api/v1/users", 403},
+		{domain.RoleUserMonitoring, "/api/v1/projects/qa-project/monitoring/all", 503},
+		{domain.RoleUserMonitoring, "/api/v1/projects/other-project/monitoring/all", 403},
+		{domain.RoleUserMonitoring, "/api/v1/projects/qa-project/monitoring?subjectCode=MAT", 403},
+		{domain.RoleUserMonitoring, "/api/v1/projects/qa-project/panelists/anything/submissions", 403},
 	} {
 		t.Run(string(tc.role)+tc.route, func(t *testing.T) {
 			app, _, token := roleApp(t, tc.role, false)
@@ -119,5 +128,26 @@ func TestInactiveAccountCannotReuseAccessToken(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != 401 {
 		t.Fatalf("inactive account got %d", res.StatusCode)
+	}
+}
+
+func TestMonitoringViewerPayloadKeepsIdentitiesPrivate(t *testing.T) {
+	data := service.AllMonitoring{
+		Project: domain.Project{ID: "assigned", Name: "Proyek QA", CreatedBy: "private-creator"},
+		Subjects: []service.Monitoring{{
+			Subject:    domain.ProjectSubject{Code: "MAT", Name: "Matematika", CandidateDefinition: "private-definition"},
+			Round:      domain.Round{Number: 1, Status: "active"},
+			History:    []domain.Round{{Number: 1, Status: "active"}},
+			Panelists:  []service.MonitoringPanelist{{ID: "private-id", Name: "private-name", Email: "private-email", Status: "Menilai"}},
+			Statistics: &domain.ItemResult{PanelistIDs: []string{"private-id"}},
+			Notes:      []service.MonitoringNote{{Note: "private-note"}},
+		}},
+	}
+	encoded, err := json.Marshal(monitoringViewerData(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "private-") || !strings.Contains(string(encoded), "Menilai") {
+		t.Fatal("viewer response must contain monitoring statuses without participant identities")
 	}
 }

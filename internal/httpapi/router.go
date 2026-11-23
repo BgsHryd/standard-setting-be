@@ -83,7 +83,7 @@ func New(config Config) *App {
 	protected.Get("/me", handler.me)
 
 	admin := protected.Group("")
-	adminRole := handler.requireRoles(domain.RoleAdminSuper)
+	adminRole := handler.requireRoles(domain.RoleAdminSuper, domain.RoleAdmin)
 	admin.Get("/config/question-instructions", adminRole, handler.getQuestionInstructions)
 	admin.Put("/config/question-instructions", adminRole, handler.saveQuestionInstructions)
 	admin.Get("/projects", adminRole, handler.listProjects)
@@ -99,10 +99,7 @@ func New(config Config) *App {
 	admin.Get("/projects/:id/accounts", adminRole, handler.accountRows)
 	admin.Get("/projects/:id/templates/:step", adminRole, handler.template)
 	admin.Post("/projects/:id/imports/:step", adminRole, handler.importWorkbook)
-	admin.Get("/projects/:id/monitoring/all", adminRole, handler.monitoringAll)
-	admin.Patch("/users/:id/active", adminRole, handler.userActive)
-	admin.Post("/users/:id/reset-password", adminRole, handler.resetPassword)
-	admin.Get("/users", adminRole, handler.listUsers)
+	admin.Get("/projects/:id/monitoring/all", handler.requireRoles(domain.RoleAdminSuper, domain.RoleAdmin, domain.RoleUserMonitoring), handler.monitoringAll)
 	admin.Get("/items", adminRole, handler.listItems)
 	admin.Post("/items", adminRole, handler.saveItems)
 	admin.Get("/items/:id/result", adminRole, handler.itemResult)
@@ -406,17 +403,6 @@ func (h *Handler) generateAccounts(c *fiber.Ctx) error {
 	users, err := h.service.GenerateAccounts(c.UserContext(), c.Params("id"), request.Accounts)
 	if err != nil {
 		return errorResponse(c, 409, err.Error())
-	}
-	return success(c, users)
-}
-
-func (h *Handler) listUsers(c *fiber.Ctx) error {
-	if err := h.requireService(c); err != nil {
-		return err
-	}
-	users, err := h.service.ListUsers(c.UserContext(), c.Query("projectId"))
-	if err != nil {
-		return err
 	}
 	return success(c, users)
 }

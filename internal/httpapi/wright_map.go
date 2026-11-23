@@ -9,8 +9,8 @@ import (
 )
 
 func (h *Handler) registerWrightMapRoutes(protected fiber.Router) {
-	protected.Get("/projects/:id/wright-maps/:subjectCode", h.requireRoles(domain.RoleAdminSuper, domain.RolePICMapel, domain.RolePanelist), h.getWrightMap)
-	protected.Put("/projects/:id/wright-maps/:subjectCode", h.requireRoles(domain.RoleAdminSuper), h.putWrightMap)
+	protected.Get("/projects/:id/wright-maps/:subjectCode", h.requireRoles(domain.RoleAdminSuper, domain.RoleAdmin, domain.RolePICMapel, domain.RolePanelist), h.getWrightMap)
+	protected.Put("/projects/:id/wright-maps/:subjectCode", h.requireRoles(domain.RoleAdminSuper, domain.RoleAdmin), h.putWrightMap)
 }
 
 func wrightMapError(c *fiber.Ctx, err error) error {

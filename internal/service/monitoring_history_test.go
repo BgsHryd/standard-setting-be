@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -106,5 +107,59 @@ func TestMonitoringHistoryFutureRoundIsEmptyAndBounded(t *testing.T) {
 		if _, err := s.MonitoringAtRound(context.Background(), "p", "MAT", n); err == nil {
 			t.Fatal("invalid/unplanned round accepted", n)
 		}
+	}
+}
+
+func TestMonitoringViewerScopeUsesCurrentAssignment(t *testing.T) {
+	s, st := monitoringHistoryFixture()
+	s.store = &picRoundOverviewStore{st}
+	st.users = append(st.users, domain.User{ID: "viewer", Role: domain.RoleUserMonitoring, Active: true, ProjectID: "p"})
+	ctx := context.Background()
+	data, err := s.MonitoringAllForViewer(ctx, "p", 1, "viewer")
+	if err != nil || len(data.Subjects) != 1 {
+		t.Fatalf("assigned monitoring data unavailable: %v", err)
+	}
+	st.users[len(st.users)-1].ProjectID = "other"
+	if _, err := s.MonitoringAllForViewer(ctx, "p", 1, "viewer"); !errors.Is(err, ErrMonitoringAssignment) {
+		t.Fatalf("stale assignment returned %v", err)
+	}
+}
+
+func TestMonitoringViewerMongoAssignmentAndRevoke(t *testing.T) {
+	ctx, s, st, project := fixture(t, true)
+	super := domain.User{ID: "super", Username: "qa.super", Role: domain.RoleAdminSuper, Active: true}
+	if err := st.InsertUsers(ctx, []domain.User{super}); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := s.CreateManagedAccount(ctx, ManagedAccountInput{
+		Role: domain.RoleAdmin, Name: "Operator", Username: "qa.operator",
+	}, super.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateManagedAccount(ctx, admin.ID, ManagedAccountIdentity{Name: "Self edit", Username: "qa.operator"}, admin.ID); !errors.Is(err, ErrAccountAccessDenied) {
+		t.Fatalf("admin account editable via admin session: %v", err)
+	}
+	viewer, err := s.CreateManagedAccount(ctx, ManagedAccountInput{
+		Role: domain.RoleUserMonitoring, Name: "Pengamat", Username: "qa.viewer",
+	}, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := s.SetMonitoringProject(ctx, viewer.ID, project.ID, admin.ID)
+	if err != nil || assigned.ProjectID != project.ID || assigned.AuthVersion <= viewer.AuthVersion {
+		t.Fatalf("assignment failed: %+v %v", assigned, err)
+	}
+	if _, err := s.MonitoringAllForViewer(ctx, project.ID, 0, viewer.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MonitoringAllForViewer(ctx, "different-project", 0, viewer.ID); !errors.Is(err, ErrMonitoringAssignment) {
+		t.Fatalf("other project accessible: %v", err)
+	}
+	if _, err := s.SetMonitoringProject(ctx, viewer.ID, "", admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MonitoringAllForViewer(ctx, project.ID, 0, viewer.ID); !errors.Is(err, ErrMonitoringAssignment) {
+		t.Fatalf("old assignment still accessible: %v", err)
 	}
 }

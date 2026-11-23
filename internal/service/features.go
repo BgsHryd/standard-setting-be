@@ -535,7 +535,7 @@ func (s *Service) CopyProject(ctx context.Context, id, name, actor string) (doma
 		for _, sub := range source.Subjects {
 			subjs = append(subjs, domain.ProjectSubject{Code: sub.Code, Name: sub.Name, CandidateDefinition: sub.CandidateDefinition, CandidateVersion: 1, PanelistCount: sub.PanelistCount, PanelistNames: append([]string(nil), sub.PanelistNames...), PICName: sub.PICName, ItemIDs: []string{}, PanelistUserIDs: []string{}})
 		}
-		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, PlannedRounds: source.PlannedRounds, SimulationEnabled: source.SimulationEnabled, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis, RoundingPolicy: projectRoundingPolicy(source), ScoringMethod: source.ScoringMethod}, actor)
+		result, err = s.SaveProject(tx, domain.Project{Name: name, Description: source.Description, PlannedRounds: source.PlannedRounds, SimulationEnabled: source.SimulationEnabled, Subjects: subjs, CollectContactPanelis: source.CollectContactPanelis}, actor)
 		if err != nil {
 			return err
 		}

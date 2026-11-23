@@ -27,7 +27,7 @@ func (s *Service) wrightMapAccess(ctx context.Context, actor, projectID, subject
 	if err != nil || !u.Active || u.Removed {
 		return domain.ErrWrightMapForbidden
 	}
-	if u.Role != domain.RoleAdminSuper {
+	if !u.Role.IsAdministrative() {
 		if write || (u.Role != domain.RolePICMapel && u.Role != domain.RolePanelist) || u.ProjectID != projectID || u.SubjectCode != subject {
 			return domain.ErrWrightMapForbidden
 		}
@@ -44,7 +44,7 @@ func (s *Service) wrightMapAccess(ctx context.Context, actor, projectID, subject
 		if sub.Code != subject {
 			continue
 		}
-		if u.Role == domain.RoleAdminSuper || (u.Role == domain.RolePICMapel && sub.PICUserID == u.ID) {
+		if u.Role.IsAdministrative() || (u.Role == domain.RolePICMapel && sub.PICUserID == u.ID) {
 			assigned = true
 		}
 		if u.Role == domain.RolePanelist {
@@ -56,7 +56,7 @@ func (s *Service) wrightMapAccess(ctx context.Context, actor, projectID, subject
 		}
 	}
 	if !assigned {
-		if u.Role == domain.RoleAdminSuper {
+		if u.Role.IsAdministrative() {
 			return domain.ErrWrightMapNotFound
 		}
 		return domain.ErrWrightMapForbidden
