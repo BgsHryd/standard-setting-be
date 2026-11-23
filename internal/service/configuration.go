@@ -54,7 +54,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		var old domain.Project
 		users := []domain.User{}
 		if p.ID == "" {
-			p.ScoringMethod = domain.NormalizeScoringMethod(p.ScoringMethod)
+			p.ScoringMethod = domain.ScoringWeighted
 			p.ID = newID("project")
 			p.Code = "SS-" + strings.ToUpper(p.ID[len(p.ID)-6:])
 			p.CreatedBy = userID
@@ -68,12 +68,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 				p.PlannedRounds = 3
 			}
 			p.SourceProjectID = ""
-			if p.RoundingPolicy == "" {
-				p.RoundingPolicy = domain.NearestRawPoint
-				if p.ScoringMethod == domain.ScoringAverage {
-					p.RoundingPolicy = "ceil_1pp"
-				}
-			}
+			p.RoundingPolicy = domain.NearestRawPoint
 		} else {
 			var err error
 			old, err = s.store.GetProject(tx, p.ID)
@@ -308,7 +303,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			}
 		}
 		for _, u := range users {
-			if !retained[u.ID] && !u.Removed {
+			if isParticipantRole(u.Role) && !retained[u.ID] && !u.Removed {
 				u.Active = false
 				u.Removed = true
 				u.AuthVersion++

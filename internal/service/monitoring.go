@@ -400,8 +400,33 @@ type AllMonitoring struct {
 }
 
 func (s *Service) MonitoringAll(ctx context.Context, id string, round int) (AllMonitoring, error) {
+	return s.monitoringAll(ctx, id, round, "")
+}
+
+var ErrMonitoringAssignment = errors.New("proyek ini tidak ditugaskan kepada akun Anda")
+
+func (s *Service) MonitoringAllForViewer(ctx context.Context, id string, round int, viewerID string) (AllMonitoring, error) {
+	if viewerID == "" {
+		return AllMonitoring{}, ErrMonitoringAssignment
+	}
+	return s.monitoringAll(ctx, id, round, viewerID)
+}
+
+func (s *Service) monitoringAll(ctx context.Context, id string, round int, viewerID string) (AllMonitoring, error) {
 	var result AllMonitoring
 	err := s.store.WithTransaction(ctx, func(tx context.Context) error {
+		if viewerID != "" {
+			viewer, err := s.store.FindByID(tx, viewerID)
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return ErrMonitoringAssignment
+			}
+			if err != nil {
+				return err
+			}
+			if !viewer.Active || viewer.Removed || viewer.Role != domain.RoleUserMonitoring || viewer.ProjectID != id {
+				return ErrMonitoringAssignment
+			}
+		}
 		p, err := s.store.GetProject(tx, id)
 		if err != nil {
 			return err

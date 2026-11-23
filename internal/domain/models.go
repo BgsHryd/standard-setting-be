@@ -5,10 +5,16 @@ import "time"
 type Role string
 
 const (
-	RoleAdminSuper Role = "admin_super"
-	RolePICMapel   Role = "pic_mapel"
-	RolePanelist   Role = "panelis"
+	RoleAdminSuper     Role = "admin_super"
+	RoleAdmin          Role = "admin"
+	RoleUserMonitoring Role = "user_monitoring"
+	RolePICMapel       Role = "pic_mapel"
+	RolePanelist       Role = "panelis"
 )
+
+func (role Role) IsAdministrative() bool {
+	return role == RoleAdminSuper || role == RoleAdmin
+}
 
 type ProjectStatus string
 

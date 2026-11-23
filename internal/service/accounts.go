@@ -65,7 +65,7 @@ func (s *Service) AccountRows(ctx context.Context, id string) ([]AccountRow, err
 		}
 	}
 	for _, u := range users {
-		if !retained[u.ID] {
+		if isParticipantRole(u.Role) && !retained[u.ID] {
 			rows = append(rows, AccountRow{UserID: u.ID, SlotID: u.SlotID, Name: u.Name, Role: u.Role, SubjectCode: u.SubjectCode, Username: u.Username, Status: "removed"})
 		}
 	}
@@ -242,18 +242,18 @@ func (s *Service) GenerateAccounts(ctx context.Context, projectID string, inputs
 	return result, err
 }
 func (s *Service) SetUserActive(ctx context.Context, id string, active bool) error {
-	return s.SetUserActiveAs(ctx, id, active, "")
+	return s.setUserActive(ctx, id, active, "")
 }
 func (s *Service) SetUserActiveAs(ctx context.Context, id string, active bool, actor string) error {
+	if actor == "" {
+		return ErrAccountAccessDenied
+	}
+	return s.setUserActive(ctx, id, active, actor)
+}
+func (s *Service) setUserActive(ctx context.Context, id string, active bool, actor string) error {
 	return s.store.WithTransaction(ctx, func(tx context.Context) error {
-		u, err := s.store.FindByID(tx, id)
+		u, err := s.credentialMutationAccount(tx, id, actor)
 		if err != nil {
-			return err
-		}
-		if u.Role == domain.RoleAdminSuper || u.Removed {
-			return errors.New("hanya peserta yang masih ditugaskan dapat diubah statusnya")
-		}
-		if err = s.store.TouchProject(tx, u.ProjectID); err != nil {
 			return err
 		}
 		if u.Active != active {
@@ -268,22 +268,22 @@ func (s *Service) SetUserActiveAs(ctx context.Context, id string, active bool, a
 	})
 }
 func (s *Service) ResetPassword(ctx context.Context, id string) error {
-	return s.ResetPasswordAs(ctx, id, "")
+	return s.resetPassword(ctx, id, "")
 }
 func (s *Service) ResetPasswordAs(ctx context.Context, id, actor string) error {
-	hash, err := auth.HashPassword(s.initialPassword)
-	if err != nil {
-		return err
+	if actor == "" {
+		return ErrAccountAccessDenied
 	}
+	return s.resetPassword(ctx, id, actor)
+}
+func (s *Service) resetPassword(ctx context.Context, id, actor string) error {
 	return s.store.WithTransaction(ctx, func(tx context.Context) error {
-		u, err := s.store.FindByID(tx, id)
+		u, err := s.credentialMutationAccount(tx, id, actor)
 		if err != nil {
 			return err
 		}
-		if u.Role == domain.RoleAdminSuper || u.Removed {
-			return errors.New("reset hanya untuk akun peserta yang masih ditugaskan")
-		}
-		if err = s.store.TouchProject(tx, u.ProjectID); err != nil {
+		hash, err := auth.HashPassword(s.initialPassword)
+		if err != nil {
 			return err
 		}
 		u.PasswordHash = hash
@@ -295,4 +295,26 @@ func (s *Service) ResetPasswordAs(ctx context.Context, id, actor string) error {
 		}
 		return s.recordAudit(tx, actor, id, u.ProjectID, "password_reset")
 	})
+}
+
+func (s *Service) credentialMutationAccount(ctx context.Context, id, actor string) (domain.User, error) {
+	u, err := s.store.FindByID(ctx, id)
+	if err != nil {
+		return u, err
+	}
+	if actor != "" {
+		if err = s.authorizeAccountRole(ctx, actor, u.Role); err != nil {
+			return u, err
+		}
+	} else if !isParticipantRole(u.Role) {
+		// Actorless internal operations retain their original participant-only scope.
+		return u, ErrAccountAccessDenied
+	}
+	if u.Removed {
+		return u, errors.New("akun sudah dihapus")
+	}
+	if isParticipantRole(u.Role) {
+		err = s.store.TouchProject(ctx, u.ProjectID)
+	}
+	return u, err
 }

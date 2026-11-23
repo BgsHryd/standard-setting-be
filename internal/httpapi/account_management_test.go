@@ -15,7 +15,11 @@ func TestAccountManagementRoutesRequireAdminMiddleware(t *testing.T) {
 	app := fiber.New()
 	h := &Handler{}
 	h.registerAccountManagementRoutes(app, func(c *fiber.Ctx) error { return c.SendStatus(403) })
-	for _, route := range []struct{ method, path string }{{"POST", "/users"}, {"PATCH", "/users/participant"}, {"DELETE", "/users/participant"}} {
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/users"}, {"POST", "/users"}, {"PATCH", "/users/participant"},
+		{"PUT", "/users/admin"}, {"DELETE", "/users/participant"}, {"PATCH", "/users/participant/active"},
+		{"POST", "/users/participant/reset-password"}, {"PUT", "/users/viewer/monitoring-project"},
+	} {
 		response, err := app.Test(httptest.NewRequest(route.method, route.path, nil))
 		if err != nil {
 			t.Fatal(err)
@@ -30,7 +34,12 @@ func TestAccountManagementRejectsMalformedPayloadBeforeMutation(t *testing.T) {
 	app := fiber.New()
 	h := &Handler{}
 	h.registerAccountManagementRoutes(app, func(c *fiber.Ctx) error { return c.Next() })
-	for _, route := range []struct{ method, path, body string }{{"POST", "/users", `{}`}, {"PATCH", "/users/participant", `{"name":`}, {"DELETE", "/users/participant?confirmation=HAPUS%20PESERTA", ""}, {"DELETE", "/users/participant?projectVersion=2", ""}} {
+	for _, route := range []struct{ method, path, body string }{
+		{"POST", "/users", `{}`}, {"PATCH", "/users/participant", `{"name":`},
+		{"DELETE", "/users/participant?confirmation=HAPUS%20PESERTA", ""}, {"DELETE", "/users/participant?projectVersion=2", ""},
+		{"PUT", "/users/admin", `{"name":`}, {"PUT", "/users/viewer/monitoring-project", `{}`},
+		{"PUT", "/users/viewer/monitoring-project", `{"projectId":null}`},
+	} {
 		req := httptest.NewRequest(route.method, route.path, strings.NewReader(route.body))
 		req.Header.Set("Content-Type", "application/json")
 		response, err := app.Test(req)
@@ -47,9 +56,9 @@ func TestAccountManagementErrorStatuses(t *testing.T) {
 	for _, test := range []struct {
 		err    error
 		status int
-	}{{service.ErrInvalidParticipantAccount, 422}, {mongo.ErrNoDocuments, 404}, {errors.New("stale project"), 409}} {
+	}{{service.ErrInvalidParticipantAccount, 422}, {service.ErrInvalidManagedAccount, 422}, {service.ErrAccountAccessDenied, 403}, {mongo.ErrNoDocuments, 404}, {errors.New("stale project"), 409}} {
 		app := fiber.New()
-		app.Get("/test", func(c *fiber.Ctx) error { return participantAccountError(c, test.err) })
+		app.Get("/test", func(c *fiber.Ctx) error { return accountMutationError(c, test.err) })
 		response, err := app.Test(httptest.NewRequest("GET", "/test", nil))
 		if err != nil {
 			t.Fatal(err)

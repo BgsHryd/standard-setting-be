@@ -55,7 +55,7 @@ func TestRecalculateRawPointCutoffUsesFrozenRubric(t *testing.T) {
 
 func TestProjectScoringMethodDefaultAndValidation(t *testing.T) {
 	ctx, s, _, _ := fixture(t, false)
-	p, err := s.SaveProject(ctx, domain.Project{Name: "Default method"}, "admin")
+	p, err := s.SaveProject(ctx, domain.Project{Name: "Default method", ScoringMethod: domain.ScoringAverage, RoundingPolicy: "ceil_1pp"}, "admin")
 	if err != nil || p.ScoringMethod != "weighted" || p.RoundingPolicy != domain.NearestRawPoint {
 		t.Fatal("new project must default weighted", p.ScoringMethod, err)
 	}
@@ -78,8 +78,8 @@ func TestProjectScoringMethodDefaultAndValidation(t *testing.T) {
 		t.Fatal("omitted method reset Average", err)
 	}
 	copy, err := s.CopyProject(ctx, p.ID, "Copy Average", "admin")
-	if err != nil || copy.ScoringMethod != "average" {
-		t.Fatal("copy lost scoring method", err)
+	if err != nil || copy.ScoringMethod != domain.ScoringWeighted || copy.RoundingPolicy != domain.NearestRawPoint {
+		t.Fatal("copy should use the current NBK policy", err)
 	}
 }
 

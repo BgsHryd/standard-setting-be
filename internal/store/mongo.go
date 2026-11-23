@@ -82,7 +82,11 @@ func (m *Mongo) ReplaceProjectUsers(ctx context.Context, projectID string, users
 			return err
 		}
 	}
-	_, err := m.users.UpdateMany(ctx, bson.M{"projectId": projectID, "_id": bson.M{"$nin": ids}}, bson.M{"$set": bson.M{"active": false, "removed": true, "updatedAt": time.Now().UTC()}, "$inc": bson.M{"authVersion": 1}})
+	_, err := m.users.UpdateMany(ctx, bson.M{
+		"projectId": projectID,
+		"role":      bson.M{"$in": bson.A{domain.RolePICMapel, domain.RolePanelist}},
+		"_id":       bson.M{"$nin": ids},
+	}, bson.M{"$set": bson.M{"active": false, "removed": true, "updatedAt": time.Now().UTC()}, "$inc": bson.M{"authVersion": 1}})
 	return err
 }
 
@@ -167,7 +171,18 @@ func (m *Mongo) DeleteProject(ctx context.Context, id string) error {
 	if project.Status != domain.ProjectDraft {
 		return errors.New("hanya proyek draft yang dapat dihapus")
 	}
-	if _, err := m.users.UpdateMany(ctx, bson.M{"projectId": id}, bson.M{"$set": bson.M{"active": false, "removed": true, "updatedAt": time.Now().UTC()}, "$inc": bson.M{"authVersion": 1}}); err != nil {
+	now := time.Now().UTC()
+	if _, err := m.users.UpdateMany(ctx, bson.M{
+		"projectId": id,
+		"role":      bson.M{"$in": bson.A{domain.RolePICMapel, domain.RolePanelist}},
+	}, bson.M{"$set": bson.M{"active": false, "removed": true, "updatedAt": now}, "$inc": bson.M{"authVersion": 1}}); err != nil {
+		return err
+	}
+	if _, err := m.users.UpdateMany(ctx, bson.M{"projectId": id, "role": domain.RoleUserMonitoring}, bson.M{
+		"$unset": bson.M{"projectId": "", "projectName": ""},
+		"$set":   bson.M{"updatedAt": now},
+		"$inc":   bson.M{"authVersion": 1},
+	}); err != nil {
 		return err
 	}
 	if err := m.SyncProjectItems(ctx, id, "", nil); err != nil {

@@ -28,14 +28,14 @@ type ParticipantAccountEdit struct {
 	Username       string `json:"username"`
 }
 
-func normalizeParticipantIdentity(name, username string) (string, string, error) {
+func normalizeAccountIdentity(name, username string) (string, string, error) {
 	name, username = strings.TrimSpace(name), strings.ToLower(strings.TrimSpace(username))
 	if name == "" || len([]rune(name)) > 200 || !usernamePattern.MatchString(username) {
 		return "", "", ErrInvalidParticipantAccount
 	}
 	return name, username, nil
 }
-func (s *Service) availableParticipantUsername(ctx context.Context, username, userID string) error {
+func (s *Service) ensureUsernameAvailable(ctx context.Context, username, userID string) error {
 	u, err := s.store.FindByUsername(ctx, username)
 	if err == nil {
 		if u.ID == userID {
@@ -44,6 +44,21 @@ func (s *Service) availableParticipantUsername(ctx context.Context, username, us
 		return errors.New("username sudah digunakan")
 	}
 	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return err
+	}
+	return nil
+}
+func (s *Service) insertAccount(ctx context.Context, u domain.User) error {
+	creator, ok := s.store.(interface {
+		InsertUsers(context.Context, []domain.User) error
+	})
+	if !ok {
+		return errors.New("penyimpanan akun baru tidak tersedia")
+	}
+	if err := creator.InsertUsers(ctx, []domain.User{u}); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return errors.New("username sudah digunakan")
+		}
 		return err
 	}
 	return nil
@@ -105,13 +120,7 @@ func (s *Service) saveParticipantMutation(ctx context.Context, p domain.Project,
 	p.UpdatedAt = time.Now().UTC()
 	u.UpdatedAt = p.UpdatedAt
 	if action == "user_create" {
-		creator, ok := s.store.(interface {
-			InsertUsers(context.Context, []domain.User) error
-		})
-		if !ok {
-			return errors.New("penyimpanan akun baru tidak tersedia")
-		}
-		if err := creator.InsertUsers(ctx, []domain.User{*u}); err != nil {
+		if err := s.insertAccount(ctx, *u); err != nil {
 			return err
 		}
 	} else if err := s.store.SaveUser(ctx, *u); err != nil {
@@ -125,11 +134,11 @@ func (s *Service) saveParticipantMutation(ctx context.Context, p domain.Project,
 
 func (s *Service) CreateParticipantAccount(ctx context.Context, input ParticipantAccountInput, actor string) (domain.User, error) {
 	var result domain.User
-	name, username, err := normalizeParticipantIdentity(input.Name, input.Username)
+	name, username, err := normalizeAccountIdentity(input.Name, input.Username)
 	if err != nil {
 		return result, err
 	}
-	if input.Role != domain.RolePICMapel && input.Role != domain.RolePanelist {
+	if !isParticipantRole(input.Role) {
 		return result, ErrInvalidParticipantAccount
 	}
 	err = s.store.WithTransaction(ctx, func(tx context.Context) error {
@@ -180,7 +189,7 @@ func (s *Service) CreateParticipantAccount(ctx context.Context, input Participan
 			sub.Slots = append(sub.Slots, domain.PersonnelSlot{ID: newID("slot"), Role: input.Role})
 			slotIndex = len(sub.Slots) - 1
 		}
-		if err = s.availableParticipantUsername(tx, username, ""); err != nil {
+		if err = s.ensureUsernameAvailable(tx, username, ""); err != nil {
 			return err
 		}
 		hash, err := auth.HashPassword(s.initialPassword)
@@ -205,7 +214,10 @@ func (s *Service) participantAssignment(ctx context.Context, id string, version 
 	if err != nil {
 		return u, domain.Project{}, 0, 0, err
 	}
-	if u.Role == domain.RoleAdminSuper || u.Removed || u.ProjectID == "" || (u.Role != domain.RolePICMapel && u.Role != domain.RolePanelist) {
+	if !isParticipantRole(u.Role) {
+		return u, domain.Project{}, 0, 0, ErrAccountAccessDenied
+	}
+	if u.Removed || u.ProjectID == "" {
 		return u, domain.Project{}, 0, 0, errors.New("hanya akun peserta yang masih ditugaskan dapat diubah")
 	}
 	p, err := s.participantProject(ctx, u.ProjectID, version)
@@ -225,7 +237,7 @@ func (s *Service) participantAssignment(ctx context.Context, id string, version 
 }
 func (s *Service) UpdateParticipantAccount(ctx context.Context, id string, input ParticipantAccountEdit, actor string) (domain.User, error) {
 	var result domain.User
-	name, username, err := normalizeParticipantIdentity(input.Name, input.Username)
+	name, username, err := normalizeAccountIdentity(input.Name, input.Username)
 	if err != nil {
 		return result, err
 	}
@@ -234,7 +246,7 @@ func (s *Service) UpdateParticipantAccount(ctx context.Context, id string, input
 		if err != nil {
 			return err
 		}
-		if err = s.availableParticipantUsername(tx, username, u.ID); err != nil {
+		if err = s.ensureUsernameAvailable(tx, username, u.ID); err != nil {
 			return err
 		}
 		if u.Username != username {

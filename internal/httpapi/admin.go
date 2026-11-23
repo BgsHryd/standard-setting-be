@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/gofiber/fiber/v2"
 	"io"
+	"standard-setting/backend/internal/domain"
 	"standard-setting/backend/internal/service"
 	"strconv"
 	"strings"
@@ -55,8 +56,11 @@ func (h *Handler) userActive(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil || input.Active == nil {
 		return errorResponse(c, 422, "status aktif wajib diisi")
 	}
+	if err := h.requireService(c); err != nil {
+		return err
+	}
 	if err := h.service.SetUserActiveAs(c.UserContext(), c.Params("id"), *input.Active, getClaims(c).Subject); err != nil {
-		return errorResponse(c, 409, err.Error())
+		return accountMutationError(c, err)
 	}
 	return success(c, fiber.Map{"updated": true})
 }
@@ -67,8 +71,11 @@ func (h *Handler) resetPassword(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil || input.Confirmation != "RESET PASSWORD" {
 		return errorResponse(c, 422, "konfirmasi reset tidak sesuai")
 	}
+	if err := h.requireService(c); err != nil {
+		return err
+	}
 	if err := h.service.ResetPasswordAs(c.UserContext(), c.Params("id"), getClaims(c).Subject); err != nil {
-		return errorResponse(c, 409, err.Error())
+		return accountMutationError(c, err)
 	}
 	return success(c, fiber.Map{"reset": true, "mustChangePassword": true})
 }
@@ -109,12 +116,61 @@ func (h *Handler) importWorkbook(c *fiber.Ctx) error {
 	}
 	return success(c, result)
 }
+
+// Viewer payload contains the fields used by all-subject monitoring.
+func monitoringViewerData(data service.AllMonitoring) fiber.Map {
+	subjects := make([]fiber.Map, 0, len(data.Subjects))
+	for _, m := range data.Subjects {
+		panelists := make([]fiber.Map, 0, len(m.Panelists))
+		for _, panelist := range m.Panelists {
+			panelists = append(panelists, fiber.Map{"status": panelist.Status})
+		}
+		history := make([]fiber.Map, 0, len(m.History))
+		for _, round := range m.History {
+			history = append(history, fiber.Map{"number": round.Number})
+		}
+		if m.Statistics != nil {
+			stats := *m.Statistics
+			stats.PanelistIDs = nil
+			m.Statistics = &stats
+		}
+		subjects = append(subjects, fiber.Map{
+			"subject": fiber.Map{"code": m.Subject.Code, "name": m.Subject.Name},
+			"round":   fiber.Map{"number": m.Round.Number, "status": m.Round.Status},
+			"history": history, "panelists": panelists, "statistics": m.Statistics,
+			"totalDone": m.TotalDone, "totalItems": m.TotalItems,
+			"standardSettingError": fiber.Map{"unit": m.StandardSettingError.Unit},
+			"angoffReview":         fiber.Map{"mix": m.AngoffReview.Mix},
+		})
+	}
+	return fiber.Map{"project": fiber.Map{"id": data.Project.ID, "name": data.Project.Name}, "subjects": subjects}
+}
+
 func (h *Handler) monitoringAll(c *fiber.Ctx) error {
+	claims := getClaims(c)
+	id := c.Params("id")
+	viewer := claims.Role == domain.RoleUserMonitoring
+	if viewer && claims.ProjectID != id {
+		return errorResponse(c, 403, service.ErrMonitoringAssignment.Error())
+	}
+	if err := h.requireService(c); err != nil {
+		return err
+	}
 	round, err := strconv.Atoi(c.Query("round", "0"))
 	if err != nil || round < 0 {
 		return errorResponse(c, 422, "putaran tidak valid")
 	}
-	data, err := h.service.MonitoringAll(c.UserContext(), c.Params("id"), round)
+	if viewer {
+		data, err := h.service.MonitoringAllForViewer(c.UserContext(), id, round, claims.Subject)
+		if errors.Is(err, service.ErrMonitoringAssignment) {
+			return errorResponse(c, 403, err.Error())
+		}
+		if err != nil {
+			return errorResponse(c, 404, err.Error())
+		}
+		return success(c, monitoringViewerData(data))
+	}
+	data, err := h.service.MonitoringAll(c.UserContext(), id, round)
 	if err != nil {
 		return errorResponse(c, 404, err.Error())
 	}
