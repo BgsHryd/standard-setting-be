@@ -23,7 +23,7 @@ func (m *Mongo) SaveQuestionInstructions(ctx context.Context, expected int, valu
 		bson.M{"$set": bson.M{
 			"answerInstructions": value.AnswerInstructions, "reviewRangeThreshold": value.ReviewRangeThreshold,
 			"instructions": value.Instructions, "tampilkan_soal_contoh": value.ShowExamples,
-			"pgkRecode": value.PGKRecode, "updatedAt": value.UpdatedAt,
+			"pgkRecode": value.PGKRecode, "pgkScoreMappings": value.PGKScoreMappings, "updatedAt": value.UpdatedAt,
 		}, "$inc": bson.M{"version": 1}},
 		options.FindOneAndUpdate().SetUpsert(expected == 0).SetReturnDocument(options.After)).Decode(&result)
 	if errors.Is(err, mongo.ErrNoDocuments) || mongo.IsDuplicateKeyError(err) {

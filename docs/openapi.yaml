@@ -86,7 +86,7 @@ paths:
       x-roles: [admin_super, admin]
       operationId: saveQuestionInstructions
       summary: Simpan petunjuk soal dan skoring PGK dengan pemeriksaan versi
-      description: HTML disanitasi dan seluruh jenis wajib berisi teks. Perubahan dan audit disimpan dalam transaksi. Pemetaan PGK dipakai pada contoh soal BS dan MCMA dengan lima opsi dan maksimum dua poin.
+      description: HTML disanitasi dan seluruh jenis wajib berisi teks. Perubahan dan audit disimpan dalam transaksi. Contoh soal PGK BS dan MCMA memilih pemetaan berdasarkan jumlah opsi.
       requestBody:
         required: true
         content:
@@ -3888,6 +3888,8 @@ components:
       type: object
       required: [version, instructions]
       properties:
+        pgkScoreMappings:
+          $ref: '#/components/schemas/PGKScoreMappings'
         pgkRecode:
           $ref: '#/components/schemas/PGKRecode'
         answerInstructions:
@@ -3912,14 +3914,36 @@ components:
           $ref: '#/components/schemas/QuestionExampleFlags'
     PGKRecode:
       type: array
+      deprecated: true
       minItems: 6
       maxItems: 6
       default: [0, 0, 1, 1, 2, 2]
-      description: Skor resmi berdasarkan indeks skor asli 0–5. Urutan menaik atau tetap, diawali 0, berakhir 2, dan memuat 1. PUT tanpa atribut ini mempertahankan pemetaan tersimpan.
+      description: Format lama untuk aturan lima opsi dengan maksimum dua poin. Gunakan pgkScoreMappings.
       items:
         type: integer
         minimum: 0
         maximum: 2
+    PGKScoreMappings:
+      type: array
+      maxItems: 100
+      description: Aturan bersama PGK BS dan MCMA, paling banyak satu per jumlah opsi. PUT dengan daftar kosong menghapus semua aturan. Jika atribut tidak dikirim, aturan dipertahankan.
+      items:
+        type: object
+        required: [optionCount, scores]
+        properties:
+          optionCount:
+            type: integer
+            minimum: 1
+            maximum: 100
+          scores:
+            type: array
+            minItems: 2
+            maxItems: 101
+            description: Skor resmi untuk indeks skor asli 0 hingga jumlah opsi. Dimulai dari 0, boleh tetap atau naik, dan berakhir pada skor maksimum positif.
+            items:
+              type: integer
+              minimum: 0
+              maximum: 100
     QuestionExampleFlags:
       type: object
       additionalProperties: false
@@ -4876,6 +4900,8 @@ components:
     PanelistForm:
       type: object
       properties:
+        pgkScoreMappings:
+          $ref: '#/components/schemas/PGKScoreMappings'
         pgkRecode:
           $ref: '#/components/schemas/PGKRecode'
         answerInstructions:
