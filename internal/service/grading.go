@@ -280,7 +280,8 @@ func publicRound(r domain.Round) domain.Round {
 }
 
 type PanelistForm struct {
-	PGKRecode            []int                                            `json:"pgkRecode"`
+	PGKRecode            []int                                            `json:"pgkRecode,omitempty"`
+	PGKScoreMappings     []domain.PGKScoreMapping                         `json:"pgkScoreMappings"`
 	AnswerInstructions   map[domain.QuestionType]domain.AnswerInstruction `json:"answerInstructions"`
 	ReviewRangeThreshold int                                              `json:"reviewRangeThreshold"`
 	QuestionInstructions map[domain.QuestionType]string                   `json:"questionInstructions"`
@@ -416,7 +417,8 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 		history[i] = publicRound(history[i])
 	}
 	return PanelistForm{
-		PGKRecode: questionConfig.PGKRecode, AnswerInstructions: questionConfig.AnswerInstructions,
+		PGKRecode: questionConfig.PGKRecode, PGKScoreMappings: questionConfig.PGKScoreMappings,
+		AnswerInstructions:   questionConfig.AnswerInstructions,
 		ReviewRangeThreshold: questionConfig.ReviewRangeThreshold, ShowExamples: questionConfig.ShowExamples,
 		QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes,
 		RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes,

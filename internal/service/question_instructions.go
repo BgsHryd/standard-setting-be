@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -20,6 +21,7 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 		AnswerInstructions: domain.DefaultAnswerInstructions(), ShowExamples: domain.DefaultQuestionExamples(),
 		ReviewRangeThreshold: domain.DefaultReviewRangeThreshold, PGKRecode: domain.DefaultPGKRecode(),
 	}
+	result.PGKScoreMappings = []domain.PGKScoreMapping{{OptionCount: 5, Scores: result.PGKRecode}}
 	st, ok := s.store.(questionInstructionStore)
 	if !ok {
 		return result, nil
@@ -32,8 +34,12 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 		return result, err
 	}
 	result.Version, result.UpdatedAt = saved.Version, saved.UpdatedAt
-	if domain.ValidPGKRecode(saved.PGKRecode) {
+	if saved.PGKScoreMappings != nil {
+		result.PGKScoreMappings = saved.PGKScoreMappings
+		result.PGKRecode = legacyPGKRecode(saved.PGKScoreMappings)
+	} else if domain.ValidPGKRecode(saved.PGKRecode) {
 		result.PGKRecode = saved.PGKRecode
+		result.PGKScoreMappings[0].Scores = saved.PGKRecode
 	}
 	if domain.ValidReviewRangeThreshold(saved.ReviewRangeThreshold) {
 		result.ReviewRangeThreshold = saved.ReviewRangeThreshold
@@ -77,6 +83,16 @@ type QuestionInstructionSettings struct {
 	ShowExamples         map[domain.QuestionType]bool
 	ReviewRangeThreshold *int
 	PGKRecode            []int
+	PGKScoreMappings     []domain.PGKScoreMapping
+}
+
+func legacyPGKRecode(mappings []domain.PGKScoreMapping) []int {
+	for _, mapping := range mappings {
+		if mapping.OptionCount == 5 && domain.ValidPGKRecode(mapping.Scores) {
+			return mapping.Scores
+		}
+	}
+	return nil
 }
 
 func (s *Service) SaveQuestionInstructionSettings(ctx context.Context, actor string, expected int, content map[domain.QuestionType]string, examples map[domain.QuestionType]bool, threshold *int, answerSettings ...map[domain.QuestionType]domain.AnswerInstruction) (domain.QuestionInstructionConfig, error) {
@@ -96,7 +112,10 @@ func (s *Service) SaveQuestionSettings(ctx context.Context, actor string, expect
 	if expected < 0 {
 		return result, errors.New("versi konfigurasi tidak valid")
 	}
-	if settings.PGKRecode != nil && !domain.ValidPGKRecode(settings.PGKRecode) {
+	if err := domain.ValidatePGKScoreMappings(settings.PGKScoreMappings); err != nil {
+		return result, err
+	}
+	if settings.PGKScoreMappings == nil && settings.PGKRecode != nil && !domain.ValidPGKRecode(settings.PGKRecode) {
 		return result, errors.New("pemetaan PGK harus berisi enam skor berurutan dari 0 hingga 2 dan memuat skor 1")
 	}
 	err := s.store.WithTransaction(ctx, func(tx context.Context) error {
@@ -154,13 +173,20 @@ func (s *Service) SaveQuestionSettings(ctx context.Context, actor string, expect
 			// HTML-only clients must preserve the existing example configuration.
 			flags = current.ShowExamples
 		}
-		recode := current.PGKRecode
-		if settings.PGKRecode != nil {
-			recode = settings.PGKRecode
+		mappings := current.PGKScoreMappings
+		if settings.PGKScoreMappings != nil {
+			mappings = settings.PGKScoreMappings
+		} else if settings.PGKRecode != nil && current.PGKRecode != nil {
+			mappings = slices.Clone(mappings)
+			index := slices.IndexFunc(mappings, func(mapping domain.PGKScoreMapping) bool {
+				return mapping.OptionCount == 5
+			})
+			mappings[index].Scores = settings.PGKRecode
 		}
 		result, err = st.SaveQuestionInstructions(tx, expected, domain.QuestionInstructionConfig{
 			ID: "question-instructions", Instructions: clean, AnswerInstructions: answerInstructions,
-			ReviewRangeThreshold: effectiveThreshold, ShowExamples: flags, PGKRecode: recode, UpdatedAt: time.Now().UTC(),
+			ReviewRangeThreshold: effectiveThreshold, ShowExamples: flags, UpdatedAt: time.Now().UTC(),
+			PGKRecode: legacyPGKRecode(mappings), PGKScoreMappings: mappings,
 		})
 		if err != nil {
 			return err

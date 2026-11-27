@@ -24,6 +24,10 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 		return err
 	}
 	var request struct {
+		PGKScoreMappings []struct {
+			OptionCount int    `json:"optionCount"`
+			Scores      []*int `json:"scores"`
+		} `json:"pgkScoreMappings"`
 		PGKRecode            []*int                                           `json:"pgkRecode"`
 		AnswerInstructions   map[domain.QuestionType]domain.AnswerInstruction `json:"answerInstructions"`
 		ReviewRangeThreshold *int                                             `json:"reviewRangeThreshold"`
@@ -44,14 +48,23 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 			flags[kind] = *enabled
 		}
 	}
-	var recode []int
-	if request.PGKRecode != nil {
-		recode = make([]int, len(request.PGKRecode))
-		for i, score := range request.PGKRecode {
-			if score == nil {
+	var mappings []domain.PGKScoreMapping
+	if request.PGKScoreMappings != nil {
+		mappings = make([]domain.PGKScoreMapping, 0, len(request.PGKScoreMappings))
+		for _, mapping := range request.PGKScoreMappings {
+			scores, valid := pgkScores(mapping.Scores)
+			if !valid {
 				return errorResponse(c, 422, "setiap skor dalam pemetaan PGK harus berupa angka bulat")
 			}
-			recode[i] = *score
+			mappings = append(mappings, domain.PGKScoreMapping{OptionCount: mapping.OptionCount, Scores: scores})
+		}
+	}
+	var recode []int
+	if mappings == nil {
+		var valid bool
+		recode, valid = pgkScores(request.PGKRecode)
+		if !valid {
+			return errorResponse(c, 422, "setiap skor dalam pemetaan PGK harus berupa angka bulat")
 		}
 	}
 	result, err := h.service.SaveQuestionSettings(c.UserContext(), getClaims(c).Subject, *request.Version, request.Instructions, service.QuestionInstructionSettings{
@@ -59,6 +72,7 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 		ShowExamples:         flags,
 		ReviewRangeThreshold: request.ReviewRangeThreshold,
 		PGKRecode:            recode,
+		PGKScoreMappings:     mappings,
 	})
 	if errors.Is(err, domain.ErrInstructionConflict) {
 		return errorResponse(c, 409, err.Error())
@@ -67,4 +81,18 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 		return errorResponse(c, 422, err.Error())
 	}
 	return success(c, result)
+}
+
+func pgkScores(values []*int) ([]int, bool) {
+	if values == nil {
+		return nil, true
+	}
+	scores := make([]int, len(values))
+	for i, value := range values {
+		if value == nil {
+			return nil, false
+		}
+		scores[i] = *value
+	}
+	return scores, true
 }

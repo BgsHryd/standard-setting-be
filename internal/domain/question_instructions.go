@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"html"
 	"strconv"
 	"strings"
@@ -34,6 +35,34 @@ func ValidPGKRecode(scores []int) bool {
 	return hasMiddle
 }
 
+type PGKScoreMapping struct {
+	OptionCount int   `json:"optionCount" bson:"optionCount"`
+	Scores      []int `json:"scores" bson:"scores"`
+}
+
+func ValidatePGKScoreMappings(mappings []PGKScoreMapping) error {
+	seen := make(map[int]bool, len(mappings))
+	for _, mapping := range mappings {
+		count, scores := mapping.OptionCount, mapping.Scores
+		if count < 1 || count > 100 {
+			return errors.New("jumlah opsi pemetaan PGK harus 1–100")
+		}
+		if seen[count] {
+			return fmt.Errorf("pemetaan PGK untuk %d opsi hanya boleh satu", count)
+		}
+		seen[count] = true
+		if len(scores) != count+1 || scores[0] != 0 || scores[count] < 1 || scores[count] > 100 {
+			return fmt.Errorf("pemetaan PGK untuk %d opsi harus mencakup skor asli 0–%d, dimulai dari 0 dan berakhir pada skor maksimum 1–100", count, count)
+		}
+		for i := 1; i < len(scores); i++ {
+			if scores[i] < scores[i-1] {
+				return fmt.Errorf("pemetaan PGK untuk %d opsi: skor %d/%d tidak boleh lebih kecil dari skor sebelumnya", count, i, count)
+			}
+		}
+	}
+	return nil
+}
+
 type AnswerInstruction struct {
 	Title       string `json:"title" bson:"title"`
 	Description string `json:"description" bson:"description"`
@@ -61,7 +90,8 @@ func ValidAnswerInstruction(value AnswerInstruction) bool {
 }
 
 type QuestionInstructionConfig struct {
-	PGKRecode            []int                              `json:"pgkRecode" bson:"pgkRecode"`
+	PGKScoreMappings     []PGKScoreMapping                  `json:"pgkScoreMappings" bson:"pgkScoreMappings"`
+	PGKRecode            []int                              `json:"pgkRecode,omitempty" bson:"pgkRecode"`
 	AnswerInstructions   map[QuestionType]AnswerInstruction `json:"answerInstructions" bson:"answerInstructions"`
 	ReviewRangeThreshold int                                `json:"reviewRangeThreshold" bson:"reviewRangeThreshold"`
 	ID                   string                             `json:"-" bson:"_id"`
