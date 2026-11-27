@@ -280,6 +280,7 @@ func publicRound(r domain.Round) domain.Round {
 }
 
 type PanelistForm struct {
+	PGKRecode            []int                                            `json:"pgkRecode"`
 	AnswerInstructions   map[domain.QuestionType]domain.AnswerInstruction `json:"answerInstructions"`
 	ReviewRangeThreshold int                                              `json:"reviewRangeThreshold"`
 	QuestionInstructions map[domain.QuestionType]string                   `json:"questionInstructions"`
@@ -414,7 +415,15 @@ func (s *Service) PanelistForm(ctx context.Context, userID, projectID, subjectCo
 	for i := range history {
 		history[i] = publicRound(history[i])
 	}
-	return PanelistForm{AnswerInstructions: questionConfig.AnswerInstructions, ReviewRangeThreshold: questionConfig.ReviewRangeThreshold, ShowExamples: questionConfig.ShowExamples, QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes, RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes, SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round), Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous, PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message}, nil
+	return PanelistForm{
+		PGKRecode: questionConfig.PGKRecode, AnswerInstructions: questionConfig.AnswerInstructions,
+		ReviewRangeThreshold: questionConfig.ReviewRangeThreshold, ShowExamples: questionConfig.ShowExamples,
+		QuestionInstructions: questionConfig.Instructions, RoundReview: review, RoundOutcomes: outcomes,
+		RoundStartRequired: startRequired, RoundStartedAt: startedAt, DiscussionNotes: discussionNotes,
+		SubmittedAt: submittedAt, AllRoundsDone: allDone, Project: p, Subject: subject, Round: publicRound(round),
+		Items: ordered, Submissions: rows, History: history, PreviousSubmissions: previous,
+		PreviousRound: previousRound, ReadOnly: readOnly, Feedback: feedback, PeriodMessage: message,
+	}, nil
 }
 
 func (s *Service) SaveSubmission(ctx context.Context, userID, name, projectID, subjectCode string, number int, itemID string, answer domain.Answer) (domain.Submission, error) {

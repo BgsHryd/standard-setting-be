@@ -15,7 +15,11 @@ type questionInstructionStore interface {
 }
 
 func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInstructionConfig, error) {
-	result := domain.QuestionInstructionConfig{AnswerInstructions: domain.DefaultAnswerInstructions(), ReviewRangeThreshold: domain.DefaultReviewRangeThreshold, ID: "question-instructions", Instructions: domain.DefaultQuestionInstructions(), ShowExamples: domain.DefaultQuestionExamples()}
+	result := domain.QuestionInstructionConfig{
+		ID: "question-instructions", Instructions: domain.DefaultQuestionInstructions(),
+		AnswerInstructions: domain.DefaultAnswerInstructions(), ShowExamples: domain.DefaultQuestionExamples(),
+		ReviewRangeThreshold: domain.DefaultReviewRangeThreshold, PGKRecode: domain.DefaultPGKRecode(),
+	}
 	st, ok := s.store.(questionInstructionStore)
 	if !ok {
 		return result, nil
@@ -28,6 +32,9 @@ func (s *Service) QuestionInstructions(ctx context.Context) (domain.QuestionInst
 		return result, err
 	}
 	result.Version, result.UpdatedAt = saved.Version, saved.UpdatedAt
+	if domain.ValidPGKRecode(saved.PGKRecode) {
+		result.PGKRecode = saved.PGKRecode
+	}
 	if domain.ValidReviewRangeThreshold(saved.ReviewRangeThreshold) {
 		result.ReviewRangeThreshold = saved.ReviewRangeThreshold
 	}
@@ -62,16 +69,35 @@ func (s *Service) SaveQuestionInstructions(ctx context.Context, actor string, ex
 	if len(examples) > 0 {
 		flags = examples[0]
 	}
-	return s.SaveQuestionInstructionSettings(ctx, actor, expected, content, flags, nil)
+	return s.SaveQuestionSettings(ctx, actor, expected, content, QuestionInstructionSettings{ShowExamples: flags})
+}
+
+type QuestionInstructionSettings struct {
+	AnswerInstructions   map[domain.QuestionType]domain.AnswerInstruction
+	ShowExamples         map[domain.QuestionType]bool
+	ReviewRangeThreshold *int
+	PGKRecode            []int
 }
 
 func (s *Service) SaveQuestionInstructionSettings(ctx context.Context, actor string, expected int, content map[domain.QuestionType]string, examples map[domain.QuestionType]bool, threshold *int, answerSettings ...map[domain.QuestionType]domain.AnswerInstruction) (domain.QuestionInstructionConfig, error) {
+	settings := QuestionInstructionSettings{ShowExamples: examples, ReviewRangeThreshold: threshold}
+	if len(answerSettings) > 0 {
+		settings.AnswerInstructions = answerSettings[0]
+	}
+	return s.SaveQuestionSettings(ctx, actor, expected, content, settings)
+}
+
+func (s *Service) SaveQuestionSettings(ctx context.Context, actor string, expected int, content map[domain.QuestionType]string, settings QuestionInstructionSettings) (domain.QuestionInstructionConfig, error) {
 	var result domain.QuestionInstructionConfig
+	threshold := settings.ReviewRangeThreshold
 	if threshold != nil && !domain.ValidReviewRangeThreshold(*threshold) {
 		return result, errors.New("ambang penanda butir harus angka bulat 1–100 poin persentase")
 	}
 	if expected < 0 {
 		return result, errors.New("versi konfigurasi tidak valid")
+	}
+	if settings.PGKRecode != nil && !domain.ValidPGKRecode(settings.PGKRecode) {
+		return result, errors.New("pemetaan PGK harus berisi enam skor berurutan dari 0 hingga 2 dan memuat skor 1")
 	}
 	err := s.store.WithTransaction(ctx, func(tx context.Context) error {
 		user, err := s.store.FindByID(tx, actor)
@@ -99,8 +125,7 @@ func (s *Service) SaveQuestionInstructionSettings(ctx context.Context, actor str
 			return readErr
 		}
 		answerInstructions := current.AnswerInstructions
-		if len(answerSettings) > 0 && answerSettings[0] != nil {
-			supplied := answerSettings[0]
+		if supplied := settings.AnswerInstructions; supplied != nil {
 			if len(supplied) != len(answerInstructions) {
 				return errors.New("instruksi pengisian seluruh jenis soal wajib diisi")
 			}
@@ -118,7 +143,7 @@ func (s *Service) SaveQuestionInstructionSettings(ctx context.Context, actor str
 			effectiveThreshold = *threshold
 		}
 		flags := domain.DefaultQuestionExamples()
-		if examples != nil {
+		if examples := settings.ShowExamples; examples != nil {
 			for kind, enabled := range examples {
 				if _, allowed := flags[kind]; !allowed {
 					return errors.New("tampilkan_soal_contoh hanya tersedia untuk PGK MCMA dan BS")
@@ -129,7 +154,14 @@ func (s *Service) SaveQuestionInstructionSettings(ctx context.Context, actor str
 			// HTML-only clients must preserve the existing example configuration.
 			flags = current.ShowExamples
 		}
-		result, err = st.SaveQuestionInstructions(tx, expected, domain.QuestionInstructionConfig{AnswerInstructions: answerInstructions, ReviewRangeThreshold: effectiveThreshold, ID: "question-instructions", Instructions: clean, ShowExamples: flags, UpdatedAt: time.Now().UTC()})
+		recode := current.PGKRecode
+		if settings.PGKRecode != nil {
+			recode = settings.PGKRecode
+		}
+		result, err = st.SaveQuestionInstructions(tx, expected, domain.QuestionInstructionConfig{
+			ID: "question-instructions", Instructions: clean, AnswerInstructions: answerInstructions,
+			ReviewRangeThreshold: effectiveThreshold, ShowExamples: flags, PGKRecode: recode, UpdatedAt: time.Now().UTC(),
+		})
 		if err != nil {
 			return err
 		}
