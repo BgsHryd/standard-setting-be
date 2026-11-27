@@ -63,10 +63,10 @@ paths:
   /config/question-instructions:
     get:
       tags: [Config]
-      x-roles: [admin_super]
+      x-roles: [admin_super, admin]
       operationId: getQuestionInstructions
-      summary: Muat petunjuk global per jenis soal
-      description: Default digunakan hanya bila konfigurasi belum disimpan. Database error tidak diganti default. Panelis menerima petunjuk melalui form.
+      summary: Muat petunjuk soal dan skoring PGK global
+      description: Konfigurasi lama memakai nilai default untuk atribut baru. Kegagalan basis data tetap dikembalikan sebagai galat. Panelis menerima pengaturan melalui form.
       responses:
         '200':
           description: Konfigurasi petunjuk
@@ -83,10 +83,10 @@ paths:
           $ref: '#/components/responses/ProtectedError'
     put:
       tags: [Config]
-      x-roles: [admin_super]
+      x-roles: [admin_super, admin]
       operationId: saveQuestionInstructions
-      summary: Simpan petunjuk global dengan pemeriksaan versi
-      description: HTML disanitasi; hanya paragraf, heading1–3, daftar, bold/italic/underline dan tabel. Seluruh jenis wajib berisi teks. Perubahan dan audit disimpan dalam transaksi. Tidak mengubah formula penilaian.
+      summary: Simpan petunjuk soal dan skoring PGK dengan pemeriksaan versi
+      description: HTML disanitasi dan seluruh jenis wajib berisi teks. Perubahan dan audit disimpan dalam transaksi. Pemetaan PGK dipakai pada contoh soal BS dan MCMA dengan lima opsi dan maksimum dua poin.
       requestBody:
         required: true
         content:
@@ -228,6 +228,7 @@ paths:
         - Auth
       x-roles:
         - admin_super
+        - admin
         - pic_mapel
         - panelis
       operationId: changePassword
@@ -270,6 +271,7 @@ paths:
         - Auth
       x-roles:
         - admin_super
+        - admin
         - pic_mapel
         - panelis
       operationId: me
@@ -301,6 +303,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: listProjects
       summary: Daftar seluruh proyek
       description: Urutan updatedAt descending. Pencarian/statistik di FE; tidak ada query search/pagination.
@@ -325,6 +328,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: createProject
       summary: Simpan Draft baru
       description: >-
@@ -349,6 +353,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: getProject
       summary: Baca konfigurasi Project
       description: id dari row daftar proyek/page.params. Data digunakan hydrate form edit.
@@ -362,6 +367,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: updateProject
       summary: Simpan konfigurasi lengkap Project
       description: >
@@ -393,6 +399,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: deleteProject
       summary: Hapus hanya Project Draft
       description: >-
@@ -439,6 +446,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: activateProject
       summary: Validasi checklist dan aktifkan proyek
       description: >-
@@ -469,6 +477,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: completeProject
       summary: Tandai proyek active sebagai completed
       description: >-
@@ -504,6 +513,7 @@ paths:
         - Users
       x-roles:
         - admin_super
+        - admin
       operationId: generateAccounts
       summary: Rekonsiliasi PIC dan Panelis proyek Draft atau Active
       description: >-
@@ -559,6 +569,7 @@ paths:
         - Items
       x-roles:
         - admin_super
+        - admin
       operationId: listSubjects
       summary: Katalog mapel dan jumlah butir setiap status
       responses:
@@ -580,6 +591,7 @@ paths:
         - Items
       x-roles:
         - admin_super
+        - admin
       operationId: createSubject
       summary: Tambah mapel dengan kode dan nama unik
       requestBody:
@@ -632,6 +644,7 @@ paths:
         - Users
       x-roles:
         - admin_super
+        - admin
       operationId: accountRows
       summary: Slot akun aktif, nonaktif, pending dan dihapus
       responses:
@@ -660,9 +673,10 @@ paths:
         - Users
       x-roles:
         - admin_super
+        - admin
       operationId: userActive
-      summary: Ubah akses peserta dan invalidasi sesi lama
-      description: Tidak untuk superadmin atau penugasan removed; nonaktif dikeluarkan dari roster efektif.
+      summary: Ubah status aktif akun dan cabut sesi lama
+      description: Akun Admin hanya dapat dikelola Admin Super. Peserta nonaktif dikeluarkan dari roster efektif.
       requestBody:
         required: true
         content:
@@ -677,6 +691,10 @@ paths:
       responses:
         '200':
           description: Status diperbarui
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         default:
@@ -693,9 +711,10 @@ paths:
         - Users
       x-roles:
         - admin_super
+        - admin
       operationId: resetPassword
       summary: Reset ke INITIAL_PASSWORD dan wajib ganti pada login berikutnya
-      description: Access dan refresh lama ditolak; reset tidak mengaktifkan akun nonaktif.
+      description: Akun Admin hanya dapat dikelola Admin Super. Akun tetap pada status aktif sebelumnya dan sesi lama dicabut.
       requestBody:
         required: true
         content:
@@ -712,6 +731,10 @@ paths:
       responses:
         '200':
           description: Password direset tanpa mengirim password di response
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -735,6 +758,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: template
       summary: Unduh template XLSX terikat proyek, langkah dan version
       description: >-
@@ -770,6 +794,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: importWorkbook
       summary: Validasi atau terapkan workbook atomik tanpa perubahan parsial
       description: >-
@@ -822,8 +847,11 @@ paths:
         - Monitoring
       x-roles:
         - admin_super
+        - admin
+        - user_monitoring
       operationId: monitoringAll
       summary: Snapshot monitoring seluruh mapel dan roster aktif
+      description: User monitoring hanya dapat membaca ringkasan anonim proyek yang ditugaskan.
       parameters:
         - name: round
           in: query
@@ -857,11 +885,12 @@ paths:
         - Users
       x-roles:
         - admin_super
+        - admin
       operationId: listUsers
       summary: Daftar akun, opsional filter proyek
       description: >-
-        Halaman akun memuat semua lalu memfilter lokal; wizard edit menggunakan projectId. Urutan createdAt
-        descending.
+        Admin melihat akun PIC Mapel, panelis, dan User Monitoring. Admin Super melihat semua akun.
+        Akun diurutkan berdasarkan createdAt terbaru.
       parameters:
         - $ref: '#/components/parameters/ProjectQuery'
       responses:
@@ -874,9 +903,14 @@ paths:
         - "Users"
       x-roles:
         - "admin_super"
-      operationId: "createParticipantAccount"
-      summary: "Tambah akun PIC atau panelis ke proyek"
-      description: "Proyek Draft/Active dan projectVersion terkini wajib. Mengisi slot kosong yang cocok atau menambah slot baru; satu PIC per mapel, maksimal 1000 panelis. Username unik; nama dan username dinormalisasi. Akun aktif menggunakan INITIAL_PASSWORD, wajib mengganti password. Menyinkronkan roster/slots dan readiness serta menaikkan versi proyek dalam transaksi."
+        - "admin"
+      operationId: "createAccount"
+      summary: "Buat akun peserta, Admin, atau User Monitoring"
+      description: >-
+        Akun baru aktif dan wajib mengganti INITIAL_PASSWORD. Hanya Admin Super yang dapat
+        membuat akun Admin. Buat akun User Monitoring terlebih dahulu, lalu atur penugasannya.
+        Untuk peserta, proyek Draft/Active dan projectVersion terkini wajib. Roster dan
+        versi proyek diperbarui dalam transaksi.
       parameters:
         - "$ref": "#/components/parameters/SessionId"
         - "$ref": "#/components/parameters/BrowserOrigin"
@@ -886,7 +920,9 @@ paths:
         content:
           "application/json":
             schema:
-              "$ref": "#/components/schemas/ParticipantAccountInput"
+              oneOf:
+                - "$ref": "#/components/schemas/ParticipantAccountInput"
+                - "$ref": "#/components/schemas/ManagedAccountInput"
       responses:
         '200':
           description: "Hasil operasi"
@@ -899,6 +935,8 @@ paths:
                     properties:
                       data:
                         "$ref": "#/components/schemas/User"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
         '409':
           "$ref": "#/components/responses/Conflict"
         '422':
@@ -913,6 +951,7 @@ paths:
         - Items
       x-roles:
         - admin_super
+        - admin
       operationId: listItems
       summary: Bank butir dengan filter opsional
       description: >-
@@ -950,6 +989,7 @@ paths:
         - Items
       x-roles:
         - admin_super
+        - admin
       operationId: saveItems
       summary: Create atau update metadata butir available dan allocated
       description: |
@@ -1005,6 +1045,7 @@ paths:
         - Items
       x-roles:
         - admin_super
+        - admin
       operationId: itemResult
       summary: Statistik dan respons butir tested
       description: >-
@@ -1048,6 +1089,7 @@ paths:
         - Items
       x-roles:
         - admin_super
+        - admin
       operationId: itemDetail
       summary: Metadata butir available, allocated atau tested
       parameters:
@@ -1074,6 +1116,7 @@ paths:
         - Monitoring
       x-roles:
         - admin_super
+        - admin
       operationId: adminPreviewPanelist
       summary: Preview respons panelis pada proyek/mapel/putaran dipilih
       parameters:
@@ -1111,6 +1154,7 @@ paths:
         - Monitoring
       x-roles:
         - admin_super
+        - admin
       operationId: adminMonitoring
       summary: Monitoring per proyek dan mapel
       description: >-
@@ -1620,6 +1664,7 @@ paths:
         - Projects
       x-roles:
         - admin_super
+        - admin
       operationId: copyProject
       summary: Salin struktur menjadi draft baru
       responses:
@@ -1920,6 +1965,7 @@ paths:
         - Reports
       x-roles:
         - admin_super
+        - admin
       operationId: projectReport
       summary: Laporan snapshot final per mapel
       responses:
@@ -1970,6 +2016,7 @@ paths:
         - Reports
       x-roles:
         - admin_super
+        - admin
       operationId: exportReport
       summary: Unduh raw atau summary dari snapshot final
       responses:
@@ -2045,6 +2092,7 @@ paths:
         - Reports
       x-roles:
         - admin_super
+        - admin
       operationId: roundWorkbooks
       summary: Unduh ZIP Excel ringkasan dan respons seluruh putaran
       description: >-
@@ -2096,6 +2144,7 @@ paths:
         - Impact
       x-roles:
         - admin_super
+        - admin
       operationId: impactTemplate
       summary: Unduh template skor dampak terikat snapshot
       responses:
@@ -2128,6 +2177,7 @@ paths:
         - Impact
       x-roles:
         - admin_super
+        - admin
       operationId: impactPreview
       summary: Validasi skor dampak tanpa mutasi
       responses:
@@ -2178,6 +2228,7 @@ paths:
         - Impact
       x-roles:
         - admin_super
+        - admin
       operationId: impactApply
       summary: Terapkan seluruh skor dampak dalam transaksi
       responses:
@@ -2233,6 +2284,7 @@ paths:
         - Impact
       x-roles:
         - admin_super
+        - admin
       operationId: impactResults
       summary: Daftar batch dan ringkasan dampak
       responses:
@@ -2344,6 +2396,7 @@ paths:
         - Evaluation
       x-roles:
         - admin_super
+        - admin
       operationId: evaluationSummary
       summary: Agregat evaluasi tanpa identitas
       responses:
@@ -2376,6 +2429,7 @@ paths:
         - Evaluation
       x-roles:
         - admin_super
+        - admin
       operationId: evaluationExport
       summary: Unduh agregat evaluasi CSV
       responses:
@@ -2421,6 +2475,7 @@ paths:
         - Audit
       x-roles:
         - admin_super
+        - admin
       operationId: auditEvents
       summary: Riwayat aktivitas terbaru
       responses:
@@ -3022,12 +3077,13 @@ paths:
         required: true
         schema:
           type: "string"
-        description: "ID akun peserta aktif dalam penugasan; bukan username dan bukan akun superadmin"
+        description: "ID akun dari daftar akun"
     patch:
       tags:
         - "Users"
       x-roles:
         - "admin_super"
+        - "admin"
       operationId: "editParticipantAccount"
       summary: "Ubah nama dan username peserta"
       description: "Memerlukan projectVersion terkini; tidak mengubah role/proyek/mapel/password/status. Nama disinkronkan ke slot/roster. Perubahan username menaikkan authVersion sehingga sesi lama ditolak. Proyek completed, akun removed, atau slot tidak sesuai ditolak. Transaksi menaikkan versi proyek."
@@ -3061,25 +3117,67 @@ paths:
           "$ref": "#/components/responses/ProtectedError"
         '404':
           "$ref": "#/components/responses/NotFound"
+    put:
+      tags: [Users]
+      x-roles: [admin_super, admin]
+      operationId: editManagedAccount
+      summary: Ubah nama dan username Admin atau User Monitoring
+      description: Hanya Admin Super yang dapat mengubah akun Admin. Perubahan username mencabut sesi akun.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParticipantAccountIdentity'
+      responses:
+        '200':
+          description: Akun diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
     delete:
       tags:
         - "Users"
       x-roles:
         - "admin_super"
-      operationId: "removeParticipantAccount"
-      summary: "Lepas peserta dari penugasan proyek"
-      description: "Soft remove: akun disimpan untuk histori, active=false, removed=true dan authVersion bertambah. Slot panelis dihapus; slot PIC diganti slot kosong. Roster/readiness proyek diperbarui, versi proyek dinaikkan, respons/snapshot historis tetap tersimpan. Proyek completed dan superadmin ditolak."
+        - "admin"
+      operationId: "removeAccount"
+      summary: "Hapus akun peserta, Admin, atau User Monitoring"
+      description: >-
+        Akun dinonaktifkan, akun ditandai removed, dan sesi dicabut. Untuk peserta, gunakan
+        HAPUS PESERTA dan sertakan versi proyek. Untuk akun Admin atau User Monitoring,
+        gunakan HAPUS AKUN. Hanya Admin Super yang dapat menghapus akun Admin.
       parameters:
         - "$ref": "#/components/parameters/SessionId"
         - "$ref": "#/components/parameters/BrowserOrigin"
         - "$ref": "#/components/parameters/CSRFToken"
         - name: "projectVersion"
           in: "query"
-          required: true
+          required: false
           schema:
             type: "integer"
             minimum: 0
-          description: "Versi proyek dari GET konfigurasi terbaru"
+          description: "Versi proyek dari GET konfigurasi terbaru. Wajib untuk HAPUS PESERTA."
         - name: "confirmation"
           in: "query"
           required: true
@@ -3087,6 +3185,7 @@ paths:
             type: "string"
             enum:
               - "HAPUS PESERTA"
+              - "HAPUS AKUN"
       responses:
         '200':
           description: "Hasil operasi"
@@ -3099,6 +3198,8 @@ paths:
                     properties:
                       data:
                         "$ref": "#/components/schemas/RemovedResult"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
         '409':
           "$ref": "#/components/responses/Conflict"
         '422':
@@ -3107,6 +3208,55 @@ paths:
           "$ref": "#/components/responses/ProtectedError"
         '404':
           "$ref": "#/components/responses/NotFound"
+  /users/{id}/monitoring-project:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [Users]
+      x-roles: [admin_super, admin]
+      operationId: setMonitoringProject
+      summary: Tetapkan atau cabut proyek User Monitoring
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: string
+                  description: ID satu proyek aktif atau string kosong untuk mencabut penugasan.
+      responses:
+        '200':
+          description: Penugasan diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/ProtectedError'
 components:
   securitySchemes:
     CookieAuth:
@@ -3402,6 +3552,8 @@ components:
       type: string
       enum:
         - admin_super
+        - admin
+        - user_monitoring
         - pic_mapel
         - panelis
     QuestionType:
@@ -3736,6 +3888,8 @@ components:
       type: object
       required: [version, instructions]
       properties:
+        pgkRecode:
+          $ref: '#/components/schemas/PGKRecode'
         answerInstructions:
           $ref: '#/components/schemas/AnswerInstructions'
         reviewRangeThreshold:
@@ -3756,6 +3910,16 @@ components:
           $ref: '#/components/schemas/QuestionInstructions'
         tampilkan_soal_contoh:
           $ref: '#/components/schemas/QuestionExampleFlags'
+    PGKRecode:
+      type: array
+      minItems: 6
+      maxItems: 6
+      default: [0, 0, 1, 1, 2, 2]
+      description: Skor resmi berdasarkan indeks skor asli 0–5. Urutan menaik atau tetap, diawali 0, berakhir 2, dan memuat 1. PUT tanpa atribut ini mempertahankan pemetaan tersimpan.
+      items:
+        type: integer
+        minimum: 0
+        maximum: 2
     QuestionExampleFlags:
       type: object
       additionalProperties: false
@@ -4712,6 +4876,8 @@ components:
     PanelistForm:
       type: object
       properties:
+        pgkRecode:
+          $ref: '#/components/schemas/PGKRecode'
         answerInstructions:
           $ref: '#/components/schemas/AnswerInstructions'
         reviewRangeThreshold:
@@ -5452,6 +5618,15 @@ components:
           maxLength: 80
           pattern: "^[a-z0-9][a-z0-9._-]{2,79}$"
           description: "Di-trim dan dinormalisasi huruf kecil sebelum validasi; unik secara global."
+    ManagedAccountInput:
+      allOf:
+        - $ref: '#/components/schemas/ParticipantAccountIdentity'
+        - type: object
+          required: [role]
+          properties:
+            role:
+              type: string
+              enum: [admin, user_monitoring]
     ParticipantAccountInput:
       allOf:
         - "$ref": "#/components/schemas/ParticipantAccountIdentity"
