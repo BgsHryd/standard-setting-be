@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"standard-setting/backend/internal/domain"
+	"standard-setting/backend/internal/service"
 )
 
 func (h *Handler) getQuestionInstructions(c *fiber.Ctx) error {
@@ -23,6 +24,7 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 		return err
 	}
 	var request struct {
+		PGKRecode            []*int                                           `json:"pgkRecode"`
 		AnswerInstructions   map[domain.QuestionType]domain.AnswerInstruction `json:"answerInstructions"`
 		ReviewRangeThreshold *int                                             `json:"reviewRangeThreshold"`
 		Version              *int                                             `json:"version"`
@@ -42,7 +44,22 @@ func (h *Handler) saveQuestionInstructions(c *fiber.Ctx) error {
 			flags[kind] = *enabled
 		}
 	}
-	result, err := h.service.SaveQuestionInstructionSettings(c.UserContext(), getClaims(c).Subject, *request.Version, request.Instructions, flags, request.ReviewRangeThreshold, request.AnswerInstructions)
+	var recode []int
+	if request.PGKRecode != nil {
+		recode = make([]int, len(request.PGKRecode))
+		for i, score := range request.PGKRecode {
+			if score == nil {
+				return errorResponse(c, 422, "setiap skor dalam pemetaan PGK harus berupa angka bulat")
+			}
+			recode[i] = *score
+		}
+	}
+	result, err := h.service.SaveQuestionSettings(c.UserContext(), getClaims(c).Subject, *request.Version, request.Instructions, service.QuestionInstructionSettings{
+		AnswerInstructions:   request.AnswerInstructions,
+		ShowExamples:         flags,
+		ReviewRangeThreshold: request.ReviewRangeThreshold,
+		PGKRecode:            recode,
+	})
 	if errors.Is(err, domain.ErrInstructionConflict) {
 		return errorResponse(c, 409, err.Error())
 	}

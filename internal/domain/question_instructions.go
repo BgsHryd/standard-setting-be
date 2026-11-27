@@ -18,6 +18,22 @@ const DefaultReviewRangeThreshold = 20
 
 func ValidReviewRangeThreshold(value int) bool { return value >= 1 && value <= 100 }
 
+func DefaultPGKRecode() []int { return []int{0, 0, 1, 1, 2, 2} }
+
+func ValidPGKRecode(scores []int) bool {
+	if len(scores) != 6 || scores[0] != 0 || scores[5] != 2 {
+		return false
+	}
+	hasMiddle := false
+	for i := 1; i < len(scores); i++ {
+		if scores[i] < scores[i-1] {
+			return false
+		}
+		hasMiddle = hasMiddle || scores[i] == 1
+	}
+	return hasMiddle
+}
+
 type AnswerInstruction struct {
 	Title       string `json:"title" bson:"title"`
 	Description string `json:"description" bson:"description"`
@@ -45,6 +61,7 @@ func ValidAnswerInstruction(value AnswerInstruction) bool {
 }
 
 type QuestionInstructionConfig struct {
+	PGKRecode            []int                              `json:"pgkRecode" bson:"pgkRecode"`
 	AnswerInstructions   map[QuestionType]AnswerInstruction `json:"answerInstructions" bson:"answerInstructions"`
 	ReviewRangeThreshold int                                `json:"reviewRangeThreshold" bson:"reviewRangeThreshold"`
 	ID                   string                             `json:"-" bson:"_id"`

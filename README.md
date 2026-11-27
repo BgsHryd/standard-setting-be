@@ -21,6 +21,16 @@ Migration `up` menerapkan versi 1–3 secara aditif dan tidak membuat akun. `go 
 
 Excel akun langkah 4 mewajibkan kolom `password` untuk akun baru; akun tersebut dapat login tanpa ganti password pertama. Akun existing tidak diubah. `INITIAL_PASSWORD` tetap berlaku untuk pembuatan otomatis dan reset manual; nilai baru dipakai setelah environment dimuat ulang dan backend dimulai ulang, tanpa mengubah akun existing secara otomatis. Lihat [panduan password Excel](docs/EXCEL-ACCOUNT-PASSWORD-2026-10-28.md).
 
+### SonarQube lokal
+
+Jalankan dari folder ini. SonarQube Community Build dan PostgreSQL muncul di grup Compose `backend-ss` di Docker Desktop.
+
+```bash
+docker compose up -d --wait sonarqube
+```
+
+Buka [SonarQube lokal](http://127.0.0.1:19090). Saat pertama masuk, gunakan `admin` / `admin` dan ganti password saat diminta. Port web bisa diatur lewat `SONAR_PORT`. Profil `quality` hanya aktif saat SonarQube ditargetkan langsung atau profil dipilih, dan hasil analisis disimpan di volume Docker.
+
 ## Dokumen
 
 - [Migrasi MongoDB/Redis ke VM terpisah dan akun admin_bp3](../output/deployment/PANDUAN-MIGRASI-MONGODB-REDIS-VM-TERPISAH-2026-10-23.md)
