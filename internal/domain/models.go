@@ -72,6 +72,7 @@ type User struct {
 }
 
 type Project struct {
+	PassConversion        *PassConversion  `json:"-" bson:"passConversion,omitempty"`
 	WorkflowVersion       int              `json:"workflowVersion" bson:"workflowVersion"`
 	PlannedRounds         int              `json:"plannedRounds" bson:"plannedRounds"`
 	SimulationEnabled     bool             `json:"simulationEnabled" bson:"simulationEnabled"`
@@ -149,6 +150,7 @@ type Item struct {
 }
 
 type ItemResult struct {
+	ProjectionPercent           *float64  `json:"projectionPercent,omitempty" bson:"-"`
 	ScoringMethod               string    `json:"scoringMethod,omitempty" bson:"scoringMethod,omitempty"`
 	StandardDeviationMethod     string    `json:"standardDeviationMethod" bson:"standardDeviationMethod,omitempty"`
 	PopulationStandardDeviation *float64  `json:"populationStandardDeviation" bson:"populationStandardDeviation,omitempty"`

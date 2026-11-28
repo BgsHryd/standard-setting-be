@@ -304,6 +304,11 @@ func (s *Service) monitoringRound(ctx context.Context, projectID, subjectCode st
 			return Monitoring{}, err
 		}
 	}
+	if result.Statistics != nil {
+		result.Statistics.ProjectionPercent = p.PassConversion.ProjectedPassPercentage(
+			subject.Code, result.Statistics, result.AngoffReview.MeanRaw, float64(result.AngoffReview.MaxPoints),
+		)
+	}
 	result.StandardSettingError = domain.RoundStandardSettingError(subject.SEM, round.FinalSnapshot, result.Statistics, result.AngoffReview, projectRoundingPolicy(p))
 	result.ItemRounds, err = s.monitoringItemRounds(ctx, p, subject, history, ordered, users)
 	if err != nil {

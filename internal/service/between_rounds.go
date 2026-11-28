@@ -129,7 +129,7 @@ func (s *Service) roundResults(ctx context.Context, user string, p domain.Projec
 	outcomes := []RoundOutcome{}
 	var review *RoundReview
 	var batches []domain.ImpactBatch
-	if st, ok := s.store.(impactSummaryStore); ok {
+	if st, ok := s.store.(impactSummaryStore); ok && p.PassConversion == nil {
 		var err error
 		batches, err = st.ListImpactSummaries(ctx, p.ID)
 		if err != nil {
@@ -148,6 +148,15 @@ func (s *Service) roundResults(ctx context.Context, user string, p domain.Projec
 			continue
 		}
 		out := frozenRoundOutcome(snap, user)
+		var raw *float64
+		var maximum float64
+		if out.Recommendation != nil {
+			raw = &out.Recommendation.MeanRaw
+		}
+		if out.MaxScore != nil {
+			maximum = *out.MaxScore
+		}
+		out.ProjectionPercent = p.PassConversion.ProjectedPassPercentage(subject.Code, &snap.Statistics, raw, maximum)
 		var newest time.Time
 		for _, batch := range batches {
 			for _, aggregate := range batch.Subjects {
