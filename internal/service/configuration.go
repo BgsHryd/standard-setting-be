@@ -49,7 +49,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 		}
 		p.Name = strings.TrimSpace(input.Name)
 		p.UpdatedAt = now
-		p.WizardStep = max(1, min(6, p.WizardStep))
+		p.WizardStep = max(1, min(7, p.WizardStep))
 		p.ItemsEditable = false
 		var old domain.Project
 		users := []domain.User{}
@@ -115,6 +115,7 @@ func (s *Service) SaveProject(ctx context.Context, input domain.Project, userID 
 			p.Version = old.Version + 1
 			p.FeatureVersion, p.SourceProjectID = old.FeatureVersion, old.SourceProjectID
 			p.WorkflowVersion = old.WorkflowVersion
+			p.PassConversion = old.PassConversion
 			if p.PlannedRounds != old.PlannedRounds || p.SimulationEnabled != old.SimulationEnabled {
 				if old.Status != domain.ProjectDraft {
 					return errors.New("pengaturan putaran dan latihan hanya dapat diubah saat Draft; PIC dapat menambah putaran")

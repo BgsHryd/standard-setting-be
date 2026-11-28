@@ -16,6 +16,8 @@ func (h *Handler) registerReportingRoutes(admin fiber.Router, adminRole fiber.Ha
 	admin.Get("/projects/:id/reports", adminRole, h.projectReport)
 	admin.Get("/projects/:id/exports", adminRole, h.exportReport)
 	admin.Get("/projects/:id/round-workbooks", adminRole, h.roundWorkbooks)
+	admin.Get("/projects/:id/pass-conversion", adminRole, h.projectPassConversion)
+	admin.Post("/projects/:id/pass-conversion", adminRole, h.uploadPassConversion)
 	admin.Get("/projects/:id/impact/template", adminRole, h.impactTemplate)
 	admin.Post("/projects/:id/impact/preview", adminRole, h.impactPreview)
 	admin.Post("/projects/:id/impact/apply", adminRole, h.impactApply)
@@ -106,33 +108,59 @@ func (h *Handler) impactTemplate(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "no-store")
 	return c.Send(data)
 }
-func impactFile(c *fiber.Ctx) ([]byte, error) {
+func readScoreWorkbook(c *fiber.Ctx) ([]byte, string, error) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		return nil, fiber.NewError(422, "unggah file template .xlsx")
+		return nil, "", fiber.NewError(422, "unggah file .xlsx")
 	}
 	if file.Size > 5*1024*1024 || strings.ToLower(filepath.Ext(file.Filename)) != ".xlsx" {
-		return nil, fiber.NewError(422, "file wajib .xlsx maksimal 5 MB")
+		return nil, "", fiber.NewError(422, "file wajib .xlsx maksimal 5 MB")
 	}
 	reader, err := file.Open()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer reader.Close()
 	data, err := io.ReadAll(io.LimitReader(reader, 5*1024*1024+1))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(data) > 5*1024*1024 {
-		return nil, fiber.NewError(422, "file maksimal 5 MB")
+		return nil, "", fiber.NewError(422, "file maksimal 5 MB")
 	}
-	return data, nil
+	return data, filepath.Base(file.Filename), nil
+}
+
+func (h *Handler) projectPassConversion(c *fiber.Ctx) error {
+	if err := h.requireService(c); err != nil {
+		return err
+	}
+	result, err := h.service.ProjectPassConversion(c.UserContext(), c.Params("id"))
+	if err != nil {
+		return reportingError(c, err)
+	}
+	return success(c, result)
+}
+
+func (h *Handler) uploadPassConversion(c *fiber.Ctx) error {
+	if err := h.requireService(c); err != nil {
+		return err
+	}
+	data, filename, err := readScoreWorkbook(c)
+	if err != nil {
+		return err
+	}
+	result, err := h.service.SaveProjectPassConversion(c.UserContext(), c.Params("id"), getClaims(c).Subject, filename, data)
+	if err != nil {
+		return reportingError(c, err)
+	}
+	return success(c, result)
 }
 func (h *Handler) impactPreview(c *fiber.Ctx) error {
 	if err := h.requireService(c); err != nil {
 		return err
 	}
-	data, err := impactFile(c)
+	data, _, err := readScoreWorkbook(c)
 	if err != nil {
 		return err
 	}
@@ -146,7 +174,7 @@ func (h *Handler) impactApply(c *fiber.Ctx) error {
 	if err := h.requireService(c); err != nil {
 		return err
 	}
-	data, err := impactFile(c)
+	data, _, err := readScoreWorkbook(c)
 	if err != nil {
 		return err
 	}

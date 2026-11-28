@@ -116,7 +116,7 @@ func (s *Service) ActivateProject(ctx context.Context, id string) (domain.Projec
 			}
 		}
 		p.Status = domain.ProjectActive
-		p.WizardStep = 6
+		p.WizardStep = 7
 		p.UpdatedAt = time.Now().UTC()
 		if err := s.store.SaveProject(tx, p); err != nil {
 			return err

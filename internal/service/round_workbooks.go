@@ -287,6 +287,11 @@ func (s *Service) readWorkbookRound(ctx context.Context, p domain.Project, sub d
 			data.statistics = &stats
 		}
 	}
+	if data.statistics != nil {
+		data.statistics.ProjectionPercent = p.PassConversion.ProjectedPassPercentage(
+			sub.Code, data.statistics, data.review.MeanRaw, float64(data.review.MaxPoints),
+		)
+	}
 	if snapshot != nil || round.Status == "active" {
 		data.uncertainty = domain.RoundStandardSettingError(sub.SEM, snapshot, data.statistics, data.review, projectRoundingPolicy(p))
 	}

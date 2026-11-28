@@ -83,10 +83,10 @@ func TestImpactWorkbookSecurityAndRows(t *testing.T) {
 	w, _ := z.Create("xl/vbaProject.bin")
 	w.Write([]byte("macro"))
 	z.Close()
-	if validateImpactArchive(out.Bytes()) == nil {
+	if validateScoreWorkbookArchive(out.Bytes()) == nil {
 		t.Fatal("macro accepted")
 	}
-	if validateImpactArchive(make([]byte, 5*1024*1024+1)) == nil {
+	if validateScoreWorkbookArchive(make([]byte, 5*1024*1024+1)) == nil {
 		t.Fatal("oversize accepted")
 	}
 }

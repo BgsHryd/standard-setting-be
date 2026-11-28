@@ -93,7 +93,10 @@ func (w *roundWorkbookSheet) finish(lastRow int) ([]byte, error) {
 func renderRoundSummary(bundle workbookSubject) ([]byte, error) {
 	fields := researchExportFields(nil, nil)
 	unitColumn := 8 + len(fields)
-	w := newRoundWorkbookSheet("Summary", unitColumn)
+	projectionColumn := unitColumn + 1
+	w := newRoundWorkbookSheet("Summary", projectionColumn)
+	projectionStyle := w.style(&excelize.Style{NumFmt: 10})
+	w.cell(projectionColumn, 1, "Proyeksi kelulusan (%)")
 	w.cell(unitColumn, 1, "Satuan cut-off dan SD (B–C)")
 	for i, field := range fields {
 		w.cell(8+i, 1, field.title)
@@ -112,6 +115,11 @@ func renderRoundSummary(bundle workbookSubject) ([]byte, error) {
 		w.cell(6, row, data.policy)
 		if data.statistics != nil {
 			w.cell(7, row, data.statistics.OperationalCutoff)
+			if projection := data.statistics.ProjectionPercent; projection != nil {
+				w.cell(projectionColumn, row, *projection/100)
+				cell := fmt.Sprintf("%s%d", w.lastColumn, row)
+				w.check(w.file.SetCellStyle(w.name, cell, cell, projectionStyle))
+			}
 		}
 		for j, field := range researchExportFields(&data.review, &data.uncertainty) {
 			v := field.value

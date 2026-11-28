@@ -83,9 +83,9 @@ func (s *Service) ImpactTemplate(ctx context.Context, id string) ([]byte, error)
 	return buf.Bytes(), nil
 }
 
-// validateImpactArchive inspects XML directly, including formulas whose cached
+// validateScoreWorkbookArchive inspects XML directly, including formulas whose cached
 // result is empty, relationship targets, macros and zip expansion limits.
-func validateImpactArchive(data []byte) error {
+func validateScoreWorkbookArchive(data []byte) error {
 	if len(data) == 0 || len(data) > workbookLimit {
 		return errors.New("file .xlsx maksimal 5 MB")
 	}
@@ -156,7 +156,7 @@ func (s *Service) PreviewImpact(ctx context.Context, id string, data []byte) (Im
 }
 func parseImpact(report ProjectReport, data []byte) (ImpactPreview, error) {
 	result := ImpactPreview{Errors: []WorkbookError{}, Scores: []domain.ImpactScore{}, Subjects: []domain.ImpactSubject{}}
-	if err := validateImpactArchive(data); err != nil {
+	if err := validateScoreWorkbookArchive(data); err != nil {
 		return result, err
 	}
 	f, err := excelize.OpenReader(bytes.NewReader(data), excelize.Options{UnzipSizeLimit: 25 * 1024 * 1024, UnzipXMLSizeLimit: 10 * 1024 * 1024})

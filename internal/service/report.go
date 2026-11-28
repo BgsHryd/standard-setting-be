@@ -173,6 +173,9 @@ func (s *Service) ProjectReportRevision(ctx context.Context, id string, number, 
 					return err
 				}
 				r.AngoffReview = &review
+				r.Statistics.ProjectionPercent = p.PassConversion.ProjectedPassPercentage(
+					sub.Code, &r.Statistics, review.MeanRaw, float64(review.MaxPoints),
+				)
 				uncertainty := domain.RoundStandardSettingError(sub.SEM, snapshot, &r.Statistics, review)
 				r.StandardSettingError = &uncertainty
 				r.ItemStatistics = snapshot.ItemStatistics
@@ -383,6 +386,7 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 		for _, field := range researchExportFields(nil, nil) {
 			headers = append(headers, field.csvName)
 		}
+		headers = append(headers, "projectionPercent")
 	}
 	for _, sub := range report.Subjects {
 		if kind == "summary" {
@@ -407,7 +411,7 @@ func (s *Service) ExportReportRevision(ctx context.Context, id string, number, r
 			for _, field := range researchExportFields(sub.AngoffReview, sub.StandardSettingError) {
 				summary = append(summary, field.value)
 			}
-			rows = append(rows, summary)
+			rows = append(rows, append(summary, st.ProjectionPercent))
 			continue
 		}
 		for _, response := range sub.Responses {
